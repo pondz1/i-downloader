@@ -254,8 +254,9 @@ QLabel#filenameLabel {
 }
 
 QLabel#statusLabel {
-    font-size: 12px;
-    color: #888;
+    font-size: 13px;
+    color: #aaa;
+    padding: 2px 0;
 }
 
 /* Group Box */
@@ -309,17 +310,25 @@ QComboBox QAbstractItemView {
     selection-background-color: #0f3460;
 }
 
-/* Spin Box */
+/* Spin Box - Clean style without visible buttons */
 QSpinBox {
     background-color: #16213e;
     border: 2px solid #0f3460;
     border-radius: 8px;
-    padding: 8px 15px;
+    padding: 10px 15px;
     color: #eaeaea;
+    min-width: 80px;
+    selection-background-color: #e94560;
 }
 
 QSpinBox:focus {
     border-color: #e94560;
+}
+
+QSpinBox::up-button, QSpinBox::down-button {
+    width: 0;
+    height: 0;
+    border: none;
 }
 
 /* Dialog */

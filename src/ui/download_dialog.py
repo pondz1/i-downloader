@@ -13,6 +13,7 @@ from PyQt6.QtGui import QFont
 
 from ..utils.constants import DEFAULT_DOWNLOAD_DIR, DEFAULT_SEGMENTS
 from ..utils.helpers import is_valid_url
+from .settings_dialog import StyledSpinBox
 
 
 class DownloadDialog(QDialog):
@@ -83,11 +84,8 @@ class DownloadDialog(QDialog):
         advanced_group = QGroupBox("Advanced Options")
         advanced_layout = QFormLayout(advanced_group)
         
-        # Number of segments
-        self.segments_spin = QSpinBox()
-        self.segments_spin.setMinimum(1)
-        self.segments_spin.setMaximum(32)
-        self.segments_spin.setValue(DEFAULT_SEGMENTS)
+        # Number of segments - using custom SpinBox
+        self.segments_spin = StyledSpinBox(min_val=1, max_val=32, value=DEFAULT_SEGMENTS)
         self.segments_spin.setToolTip("More segments can increase download speed, but too many may cause issues")
         advanced_layout.addRow("Download Segments:", self.segments_spin)
         

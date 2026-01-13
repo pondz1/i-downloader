@@ -17,6 +17,12 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QTimer, pyqtSlot, QSize
 from PyQt6.QtGui import QIcon, QAction, QCloseEvent
 
+try:
+    import qtawesome as qta
+    HAS_QTAWESOME = True
+except ImportError:
+    HAS_QTAWESOME = False
+
 from .styles import DARK_THEME
 from .download_item import DownloadItemWidget
 from .download_dialog import DownloadDialog
@@ -29,6 +35,13 @@ from ..utils.constants import (
     DownloadStatus
 )
 from ..utils.helpers import format_size, format_speed
+
+
+def get_icon(icon_name: str, color: str = '#eaeaea'):
+    """Get icon from QtAwesome or return None"""
+    if HAS_QTAWESOME:
+        return qta.icon(icon_name, color=color)
+    return None
 
 
 class MainWindow(QMainWindow):
@@ -68,6 +81,10 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(800, 600)
         self.resize(900, 650)
         
+        # Set window icon
+        if HAS_QTAWESOME:
+            self.setWindowIcon(qta.icon('fa5s.download', color='#e94560'))
+        
         # Center on screen
         screen = QApplication.primaryScreen().geometry()
         x = (screen.width() - self.width()) // 2
@@ -78,30 +95,38 @@ class MainWindow(QMainWindow):
         """Setup the toolbar"""
         toolbar = QToolBar("Main Toolbar")
         toolbar.setMovable(False)
-        toolbar.setIconSize(QSize(24, 24))
+        toolbar.setIconSize(QSize(20, 20))
         self.addToolBar(toolbar)
         
         # Add download button
-        self.add_btn = QPushButton("➕ Add Download")
+        self.add_btn = QPushButton(" Add Download")
+        if HAS_QTAWESOME:
+            self.add_btn.setIcon(qta.icon('fa5s.plus', color='#eaeaea'))
         self.add_btn.clicked.connect(self._on_add_download)
         toolbar.addWidget(self.add_btn)
         
         toolbar.addSeparator()
         
         # Resume all button
-        self.resume_all_btn = QPushButton("▶ Resume All")
+        self.resume_all_btn = QPushButton(" Resume All")
+        if HAS_QTAWESOME:
+            self.resume_all_btn.setIcon(qta.icon('fa5s.play', color='#eaeaea'))
         self.resume_all_btn.clicked.connect(self._on_resume_all)
         toolbar.addWidget(self.resume_all_btn)
         
         # Pause all button
-        self.pause_all_btn = QPushButton("⏸ Pause All")
+        self.pause_all_btn = QPushButton(" Pause All")
+        if HAS_QTAWESOME:
+            self.pause_all_btn.setIcon(qta.icon('fa5s.pause', color='#eaeaea'))
         self.pause_all_btn.clicked.connect(self._on_pause_all)
         toolbar.addWidget(self.pause_all_btn)
         
         toolbar.addSeparator()
         
         # Clear completed button
-        self.clear_btn = QPushButton("🗑 Clear Completed")
+        self.clear_btn = QPushButton(" Clear Completed")
+        if HAS_QTAWESOME:
+            self.clear_btn.setIcon(qta.icon('fa5s.trash-alt', color='#eaeaea'))
         self.clear_btn.clicked.connect(self._on_clear_completed)
         toolbar.addWidget(self.clear_btn)
         
@@ -111,7 +136,9 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(spacer)
         
         # Settings button
-        self.settings_btn = QPushButton("⚙ Settings")
+        self.settings_btn = QPushButton(" Settings")
+        if HAS_QTAWESOME:
+            self.settings_btn.setIcon(qta.icon('fa5s.cog', color='#eaeaea'))
         self.settings_btn.clicked.connect(self._on_settings)
         toolbar.addWidget(self.settings_btn)
     
@@ -173,6 +200,15 @@ class MainWindow(QMainWindow):
     def _setup_system_tray(self):
         """Setup system tray icon"""
         self.tray_icon = QSystemTrayIcon(self)
+        
+        # Set tray icon
+        if HAS_QTAWESOME:
+            self.tray_icon.setIcon(qta.icon('fa5s.download', color='#e94560'))
+        else:
+            # Use default Qt icon as fallback
+            self.tray_icon.setIcon(self.style().standardIcon(
+                self.style().StandardPixmap.SP_ArrowDown
+            ))
         
         # Create tray menu
         tray_menu = QMenu()
@@ -467,19 +503,25 @@ class MainWindow(QMainWindow):
     
     def _on_quit(self):
         """Handle quit action"""
+        self._force_quit = True
         self.close()
     
     def closeEvent(self, event: QCloseEvent):
         """Handle window close event"""
-        if self._settings.get('close_to_tray', False):
+        if self._settings.get('close_to_tray', False) and not getattr(self, '_force_quit', False):
             event.ignore()
             self.hide()
         else:
-            # Shutdown properly
-            if self._loop:
-                future = asyncio.run_coroutine_threadsafe(
-                    self.shutdown(),
-                    self._loop
-                )
-                future.result(timeout=5)
+            # Stop the update timer first
+            self._update_timer.stop()
+            
+            # Save all downloads synchronously
+            if self._download_manager:
+                for download in self._download_manager.get_all_downloads():
+                    self._download_manager.db.save_download(download)
+            
+            # Close tray icon
+            if hasattr(self, 'tray_icon'):
+                self.tray_icon.hide()
+            
             event.accept()

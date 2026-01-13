@@ -65,10 +65,12 @@ class DownloadManager:
         self._session = aiohttp.ClientSession()
         self._running = True
         
-        # Load incomplete downloads from database
-        incomplete = self.db.get_incomplete_downloads()
-        for download in incomplete:
-            download.status = DownloadStatus.PAUSED
+        # Load ALL downloads from database (including completed)
+        all_downloads = self.db.get_all_downloads()
+        for download in all_downloads:
+            # Set incomplete downloads to paused
+            if download.status == DownloadStatus.DOWNLOADING:
+                download.status = DownloadStatus.PAUSED
             self.downloads[download.id] = download
     
     async def shutdown(self):

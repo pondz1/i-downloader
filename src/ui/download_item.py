@@ -9,6 +9,12 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 
+try:
+    import qtawesome as qta
+    HAS_QTAWESOME = True
+except ImportError:
+    HAS_QTAWESOME = False
+
 from ..models.download import Download
 from ..utils.constants import DownloadStatus
 from ..utils.helpers import format_size, format_speed, format_time
@@ -34,17 +40,17 @@ class DownloadItemWidget(QFrame):
     
     def _setup_ui(self):
         """Set up the user interface"""
-        self.setFixedHeight(100)
+        self.setFixedHeight(120)  # Increased height
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         
         # Main layout
         main_layout = QHBoxLayout(self)
-        main_layout.setContentsMargins(15, 10, 15, 10)
-        main_layout.setSpacing(15)
+        main_layout.setContentsMargins(20, 15, 20, 15)
+        main_layout.setSpacing(20)
         
         # Left section - File info
         left_layout = QVBoxLayout()
-        left_layout.setSpacing(5)
+        left_layout.setSpacing(8)
         
         # Filename
         self.filename_label = QLabel(self.download.filename)
@@ -53,6 +59,7 @@ class DownloadItemWidget(QFrame):
         font.setBold(True)
         font.setPointSize(11)
         self.filename_label.setFont(font)
+        self.filename_label.setWordWrap(True)
         left_layout.addWidget(self.filename_label)
         
         # Progress bar
@@ -61,47 +68,45 @@ class DownloadItemWidget(QFrame):
         self.progress_bar.setMaximum(100)
         self.progress_bar.setValue(0)
         self.progress_bar.setTextVisible(True)
-        self.progress_bar.setFixedHeight(18)
+        self.progress_bar.setFixedHeight(22)
         left_layout.addWidget(self.progress_bar)
         
         # Status info (size, speed, ETA)
         self.status_label = QLabel()
         self.status_label.setObjectName("statusLabel")
+        self.status_label.setMinimumHeight(20)
         left_layout.addWidget(self.status_label)
         
         main_layout.addLayout(left_layout, 1)
         
-        # Right section - Buttons
-        right_layout = QVBoxLayout()
-        right_layout.setSpacing(5)
-        right_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-        
-        # Button container
+        # Right section - Buttons (single row)
         button_layout = QHBoxLayout()
-        button_layout.setSpacing(8)
+        button_layout.setSpacing(10)
+        button_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         
-        # Pause/Resume button
-        self.pause_resume_btn = QPushButton("⏸ Pause")
-        self.pause_resume_btn.setFixedWidth(90)
+        # Pause/Resume/Open button
+        self.pause_resume_btn = QPushButton(" Pause")
+        self.pause_resume_btn.setFixedSize(100, 36)
         self.pause_resume_btn.clicked.connect(self._on_pause_resume_click)
         button_layout.addWidget(self.pause_resume_btn)
         
-        # Cancel/Open button
-        self.action_btn = QPushButton("✕ Cancel")
-        self.action_btn.setFixedWidth(90)
+        # Cancel button
+        self.action_btn = QPushButton(" Cancel")
+        self.action_btn.setFixedSize(100, 36)
         self.action_btn.clicked.connect(self._on_action_click)
         button_layout.addWidget(self.action_btn)
         
-        right_layout.addLayout(button_layout)
-        
-        # Open folder button (shown when completed)
-        self.open_folder_btn = QPushButton("📁 Open Folder")
-        self.open_folder_btn.setFixedWidth(190)
+        # Open folder button (shown when completed, in same row)
+        self.open_folder_btn = QPushButton(" Folder")
+        self.open_folder_btn.setFixedSize(100, 36)
         self.open_folder_btn.clicked.connect(self._on_open_folder_click)
         self.open_folder_btn.hide()
-        right_layout.addWidget(self.open_folder_btn)
+        button_layout.addWidget(self.open_folder_btn)
         
-        main_layout.addLayout(right_layout)
+        # Set icons if QtAwesome is available
+        self._update_button_icons()
+        
+        main_layout.addLayout(button_layout)
     
     def update_download(self, download: Download):
         """Update the download data and refresh display"""
@@ -170,38 +175,66 @@ class DownloadItemWidget(QFrame):
         status = self.download.status
         
         if status == DownloadStatus.DOWNLOADING:
-            self.pause_resume_btn.setText("⏸ Pause")
+            self.pause_resume_btn.setText(" Pause")
+            if HAS_QTAWESOME:
+                self.pause_resume_btn.setIcon(qta.icon('fa5s.pause', color='#eaeaea'))
             self.pause_resume_btn.show()
-            self.action_btn.setText("✕ Cancel")
+            self.action_btn.setText(" Cancel")
+            if HAS_QTAWESOME:
+                self.action_btn.setIcon(qta.icon('fa5s.times', color='#eaeaea'))
             self.action_btn.show()
             self.open_folder_btn.hide()
             
         elif status == DownloadStatus.PAUSED:
-            self.pause_resume_btn.setText("▶ Resume")
+            self.pause_resume_btn.setText(" Resume")
+            if HAS_QTAWESOME:
+                self.pause_resume_btn.setIcon(qta.icon('fa5s.play', color='#eaeaea'))
             self.pause_resume_btn.show()
-            self.action_btn.setText("✕ Cancel")
+            self.action_btn.setText(" Cancel")
+            if HAS_QTAWESOME:
+                self.action_btn.setIcon(qta.icon('fa5s.times', color='#eaeaea'))
             self.action_btn.show()
             self.open_folder_btn.hide()
             
         elif status == DownloadStatus.COMPLETED:
-            self.pause_resume_btn.setText("📄 Open")
+            self.pause_resume_btn.setText(" Open")
+            if HAS_QTAWESOME:
+                self.pause_resume_btn.setIcon(qta.icon('fa5s.file', color='#eaeaea'))
             self.pause_resume_btn.show()
             self.action_btn.hide()
+            self.open_folder_btn.setText(" Folder")
+            if HAS_QTAWESOME:
+                self.open_folder_btn.setIcon(qta.icon('fa5s.folder-open', color='#eaeaea'))
             self.open_folder_btn.show()
             
         elif status == DownloadStatus.QUEUED:
-            self.pause_resume_btn.setText("▶ Start")
+            self.pause_resume_btn.setText(" Start")
+            if HAS_QTAWESOME:
+                self.pause_resume_btn.setIcon(qta.icon('fa5s.play', color='#eaeaea'))
             self.pause_resume_btn.show()
-            self.action_btn.setText("✕ Remove")
+            self.action_btn.setText(" Remove")
+            if HAS_QTAWESOME:
+                self.action_btn.setIcon(qta.icon('fa5s.trash-alt', color='#eaeaea'))
             self.action_btn.show()
             self.open_folder_btn.hide()
             
         elif status == DownloadStatus.FAILED:
-            self.pause_resume_btn.setText("🔄 Retry")
+            self.pause_resume_btn.setText(" Retry")
+            if HAS_QTAWESOME:
+                self.pause_resume_btn.setIcon(qta.icon('fa5s.redo', color='#eaeaea'))
             self.pause_resume_btn.show()
-            self.action_btn.setText("✕ Remove")
+            self.action_btn.setText(" Remove")
+            if HAS_QTAWESOME:
+                self.action_btn.setIcon(qta.icon('fa5s.trash-alt', color='#eaeaea'))
             self.action_btn.show()
             self.open_folder_btn.hide()
+    
+    def _update_button_icons(self):
+        """Set initial button icons"""
+        if HAS_QTAWESOME:
+            self.pause_resume_btn.setIcon(qta.icon('fa5s.pause', color='#eaeaea'))
+            self.action_btn.setIcon(qta.icon('fa5s.times', color='#eaeaea'))
+            self.open_folder_btn.setIcon(qta.icon('fa5s.folder-open', color='#eaeaea'))
     
     def _on_pause_resume_click(self):
         """Handle pause/resume button click"""
