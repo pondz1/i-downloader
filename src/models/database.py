@@ -313,8 +313,8 @@ class Database:
             completed_at=datetime.fromisoformat(row['completed_at']) if row['completed_at'] else None,
             supports_resume=bool(row['supports_resume']),
             content_type=row['content_type'],
-            retry_count=row.get('retry_count', 0),
-            checksum=row.get('checksum', ''),
-            checksum_algorithm=row.get('checksum_algorithm', ''),
-            expected_checksum=row.get('expected_checksum', '')
+            retry_count=row['retry_count'] if row['retry_count'] is not None else 0,
+            checksum=row['checksum'] if row['checksum'] is not None else '',
+            checksum_algorithm=row['checksum_algorithm'] if row['checksum_algorithm'] is not None else '',
+            expected_checksum=row['expected_checksum'] if row['expected_checksum'] is not None else ''
         )
