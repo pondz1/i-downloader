@@ -21,7 +21,7 @@ class DownloadDialog(QDialog):
     """Dialog for adding a new download"""
 
     # Signal emitted when download is confirmed
-    download_requested = pyqtSignal(str, str, int, str, object)  # url, save_dir, num_segments, category, scheduled_time
+    download_requested = pyqtSignal(str, str, int, str, object, str, str)  # url, save_dir, num_segments, category, scheduled_time, expected_checksum, checksum_algorithm
 
     def __init__(self, parent=None, url: str = ""):
         super().__init__(parent)
@@ -125,6 +125,27 @@ class DownloadDialog(QDialog):
         self.schedule_datetime.setMinimumDateTime(QDateTime.currentDateTime())
         advanced_layout.addRow("Start Time:", self.schedule_datetime)
 
+        # Checksum verification option
+        checksum_row = QHBoxLayout()
+        self.verify_checksum_cb = QCheckBox("Verify file checksum")
+        self.verify_checksum_cb.toggled.connect(self._on_checksum_toggled)
+        checksum_row.addWidget(self.verify_checksum_cb)
+        advanced_layout.addRow(checksum_row)
+
+        # Checksum algorithm dropdown
+        self.checksum_algo_combo = QComboBox()
+        self.checksum_algo_combo.addItem("SHA256", "sha256")
+        self.checksum_algo_combo.addItem("SHA1", "sha1")
+        self.checksum_algo_combo.addItem("MD5", "md5")
+        self.checksum_algo_combo.setEnabled(False)
+        advanced_layout.addRow("Algorithm:", self.checksum_algo_combo)
+
+        # Checksum value input
+        self.checksum_input = QLineEdit()
+        self.checksum_input.setPlaceholderText("Enter checksum value (optional)")
+        self.checksum_input.setEnabled(False)
+        advanced_layout.addRow("Checksum:", self.checksum_input)
+
         layout.addWidget(advanced_group)
 
         # Spacer
@@ -204,6 +225,11 @@ class DownloadDialog(QDialog):
         else:
             self.download_btn.setText("Download")
 
+    def _on_checksum_toggled(self, checked: bool):
+        """Handle checksum verification checkbox toggle"""
+        self.checksum_algo_combo.setEnabled(checked)
+        self.checksum_input.setEnabled(checked)
+
     def _on_category_changed(self):
         """Handle category change"""
         category_key = self.category_combo.currentData()
@@ -246,13 +272,23 @@ class DownloadDialog(QDialog):
             QMessageBox.warning(self, "Invalid Path", "The save location does not exist.")
             return
 
+        # Get checksum information if verification is enabled
+        expected_checksum = ""
+        checksum_algorithm = ""
+        if self.verify_checksum_cb.isChecked():
+            expected_checksum = self.checksum_input.text().strip()
+            checksum_algorithm = self.checksum_algo_combo.currentData()
+            if not expected_checksum:
+                QMessageBox.warning(self, "Checksum Required", "Please enter the checksum value.")
+                return
+
         # Get scheduled time if scheduling is enabled
         scheduled_time = None
         if self.schedule_cb.isChecked():
             scheduled_time = self.schedule_datetime.dateTime().toPyDateTime()
 
         # Emit signal and close
-        self.download_requested.emit(url, save_dir, num_segments, category, scheduled_time)
+        self.download_requested.emit(url, save_dir, num_segments, category, scheduled_time, expected_checksum, checksum_algorithm)
         self.accept()
     
     def get_download_info(self) -> tuple:

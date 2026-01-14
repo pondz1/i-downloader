@@ -40,6 +40,10 @@ class Download:
     completed_at: Optional[datetime] = None
     supports_resume: bool = False
     content_type: str = ""
+    retry_count: int = 0  # Number of retry attempts
+    checksum: str = ""  # Calculated checksum after download
+    checksum_algorithm: str = ""  # Algorithm used (md5, sha1, sha256)
+    expected_checksum: str = ""  # User-provided checksum for verification
     
     @property
     def progress(self) -> float:
@@ -84,6 +88,10 @@ class Download:
             'completed_at': self.completed_at.isoformat() if self.completed_at else None,
             'supports_resume': self.supports_resume,
             'content_type': self.content_type,
+            'retry_count': self.retry_count,
+            'checksum': self.checksum,
+            'checksum_algorithm': self.checksum_algorithm,
+            'expected_checksum': self.expected_checksum,
             'segments': [
                 {
                     'index': s.index,
@@ -111,7 +119,7 @@ class Download:
             )
             for s in data.get('segments', [])
         ]
-        
+
         return cls(
             id=data['id'],
             url=data['url'],
@@ -126,5 +134,9 @@ class Download:
             created_at=datetime.fromisoformat(data['created_at']),
             completed_at=datetime.fromisoformat(data['completed_at']) if data.get('completed_at') else None,
             supports_resume=data.get('supports_resume', False),
-            content_type=data.get('content_type', '')
+            content_type=data.get('content_type', ''),
+            retry_count=data.get('retry_count', 0),
+            checksum=data.get('checksum', ''),
+            checksum_algorithm=data.get('checksum_algorithm', ''),
+            expected_checksum=data.get('expected_checksum', '')
         )

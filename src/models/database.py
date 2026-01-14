@@ -46,13 +46,41 @@ class Database:
                 completed_at TEXT,
                 supports_resume INTEGER DEFAULT 0,
                 content_type TEXT DEFAULT '',
-                segments_json TEXT DEFAULT '[]'
+                segments_json TEXT DEFAULT '[]',
+                retry_count INTEGER DEFAULT 0,
+                checksum TEXT DEFAULT '',
+                checksum_algorithm TEXT DEFAULT '',
+                expected_checksum TEXT DEFAULT ''
             )
         ''')
-        
+
+        # Migrate: Add new columns if they don't exist (for existing databases)
+        self._migrate_database(cursor)
+
         conn.commit()
         conn.close()
-    
+
+    def _migrate_database(self, cursor):
+        """Migrate existing database to add new columns"""
+        # Get existing columns
+        cursor.execute("PRAGMA table_info(downloads)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+
+        # Add new columns if they don't exist
+        new_columns = {
+            'retry_count': 'INTEGER DEFAULT 0',
+            'checksum': "TEXT DEFAULT ''",
+            'checksum_algorithm': "TEXT DEFAULT ''",
+            'expected_checksum': "TEXT DEFAULT ''"
+        }
+
+        for column, definition in new_columns.items():
+            if column not in existing_columns:
+                try:
+                    cursor.execute(f'ALTER TABLE downloads ADD COLUMN {column} {definition}')
+                except Exception as e:
+                    print(f"Migration warning: Could not add column {column}: {e}")
+
     def save_download(self, download: Download):
         """Save or update a download in the database"""
         conn = self._get_connection()
@@ -71,11 +99,11 @@ class Database:
         ])
         
         cursor.execute('''
-            INSERT OR REPLACE INTO downloads 
+            INSERT OR REPLACE INTO downloads
             (id, url, filename, save_path, total_size, downloaded_size, status,
              num_segments, error_message, created_at, completed_at, supports_resume,
-             content_type, segments_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             content_type, segments_json, retry_count, checksum, checksum_algorithm, expected_checksum)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             download.id,
             download.url,
@@ -90,7 +118,11 @@ class Database:
             download.completed_at.isoformat() if download.completed_at else None,
             1 if download.supports_resume else 0,
             download.content_type,
-            segments_json
+            segments_json,
+            download.retry_count,
+            download.checksum,
+            download.checksum_algorithm,
+            download.expected_checksum
         ))
         
         conn.commit()
@@ -150,12 +182,107 @@ class Database:
         """Clear all completed downloads from database"""
         conn = self._get_connection()
         cursor = conn.cursor()
-        
+
         cursor.execute('DELETE FROM downloads WHERE status = ?', (DownloadStatus.COMPLETED,))
-        
+
         conn.commit()
         conn.close()
-    
+
+    def get_completed_downloads(self) -> List[Download]:
+        """Get all completed, failed, or cancelled downloads (for history view)"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT * FROM downloads
+            WHERE status IN (?, ?, ?)
+            ORDER BY created_at DESC
+        ''', (DownloadStatus.COMPLETED, DownloadStatus.FAILED, DownloadStatus.CANCELLED))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [self._row_to_download(row) for row in rows]
+
+    def search_downloads(self, query: str, status_filter: Optional[str] = None) -> List[Download]:
+        """
+        Search downloads by filename or URL.
+
+        Args:
+            query: Search query string
+            status_filter: Optional status filter (completed, failed, cancelled, etc.)
+
+        Returns:
+            List of matching downloads
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        sql = 'SELECT * FROM downloads WHERE (filename LIKE ? OR url LIKE ?)'
+        params = (f'%{query}%', f'%{query}%')
+
+        if status_filter:
+            sql += ' AND status = ?'
+            params = (f'%{query}%', f'%{query}%', status_filter)
+
+        sql += ' ORDER BY created_at DESC'
+
+        cursor.execute(sql, params)
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [self._row_to_download(row) for row in rows]
+
+    def filter_by_status(self, statuses: List[str]) -> List[Download]:
+        """
+        Filter downloads by status.
+
+        Args:
+            statuses: List of status values to filter by
+
+        Returns:
+            List of downloads with matching status
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        placeholders = ','.join('?' * len(statuses))
+        cursor.execute(f'''
+            SELECT * FROM downloads
+            WHERE status IN ({placeholders})
+            ORDER BY created_at DESC
+        ''', statuses)
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [self._row_to_download(row) for row in rows]
+
+    def filter_by_date_range(self, start_date: datetime, end_date: datetime) -> List[Download]:
+        """
+        Filter downloads by date range.
+
+        Args:
+            start_date: Start of date range (inclusive)
+            end_date: End of date range (inclusive)
+
+        Returns:
+            List of downloads in the date range
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT * FROM downloads
+            WHERE created_at >= ? AND created_at <= ?
+            ORDER BY created_at DESC
+        ''', (start_date.isoformat(), end_date.isoformat()))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [self._row_to_download(row) for row in rows]
+
     def _row_to_download(self, row: sqlite3.Row) -> Download:
         """Convert database row to Download object"""
         segments_data = json.loads(row['segments_json'])
@@ -185,5 +312,9 @@ class Database:
             created_at=datetime.fromisoformat(row['created_at']),
             completed_at=datetime.fromisoformat(row['completed_at']) if row['completed_at'] else None,
             supports_resume=bool(row['supports_resume']),
-            content_type=row['content_type']
+            content_type=row['content_type'],
+            retry_count=row.get('retry_count', 0),
+            checksum=row.get('checksum', ''),
+            checksum_algorithm=row.get('checksum_algorithm', ''),
+            expected_checksum=row.get('expected_checksum', '')
         )

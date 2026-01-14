@@ -14,15 +14,19 @@ from datetime import datetime
 
 from .segment import SegmentDownloader
 from .file_utils import merge_segments, create_segment_files, cleanup_temp_files
+from .checksum import ChecksumVerifier
 from ..models.download import Download, SegmentInfo
 from ..models.database import Database
 from ..utils.constants import (
-    DEFAULT_SEGMENTS, 
-    DEFAULT_MAX_CONCURRENT, 
+    DEFAULT_SEGMENTS,
+    DEFAULT_MAX_CONCURRENT,
     DEFAULT_TIMEOUT,
     USER_AGENT,
     APP_DATA_DIR,
-    DownloadStatus
+    DownloadStatus,
+    DEFAULT_MAX_RETRIES,
+    DEFAULT_RETRY_DELAY,
+    DEFAULT_RETRY_BACKOFF
 )
 from ..utils.helpers import (
     extract_filename_from_url, 
@@ -43,22 +47,32 @@ class DownloadManager:
         default_segments: int = DEFAULT_SEGMENTS,
         progress_callback: Optional[Callable[[Download], None]] = None,
         status_callback: Optional[Callable[[Download], None]] = None,
-        rate_limit: Optional[float] = None  # bytes per second (None = unlimited)
+        rate_limit: Optional[float] = None,  # bytes per second (None = unlimited)
+        proxy_url: Optional[str] = None,
+        enable_retry: bool = True,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        retry_delay: float = DEFAULT_RETRY_DELAY,
+        retry_backoff: float = DEFAULT_RETRY_BACKOFF
     ):
         self.max_concurrent = max_concurrent
         self.default_segments = default_segments
         self.progress_callback = progress_callback
         self.status_callback = status_callback
         self.rate_limit = rate_limit
+        self.proxy_url = proxy_url
+        self.enable_retry = enable_retry
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        self.retry_backoff = retry_backoff
 
         self.downloads: Dict[str, Download] = {}
         self.active_tasks: Dict[str, asyncio.Task] = {}
         self.segment_downloaders: Dict[str, List[SegmentDownloader]] = {}
-        
+
         self.db = Database()
         self.temp_dir = APP_DATA_DIR / "temp"
         self.temp_dir.mkdir(exist_ok=True)
-        
+
         self._session: Optional[aiohttp.ClientSession] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._running = False
@@ -74,7 +88,11 @@ class DownloadManager:
         # Create connector with SSL validation
         connector = aiohttp.TCPConnector(ssl=ssl_context)
 
-        self._session = aiohttp.ClientSession(connector=connector)
+        # Create session with proxy if configured
+        self._session = aiohttp.ClientSession(
+            connector=connector,
+            trust_env=True  # Respect system proxy env vars
+        )
         self._running = True
 
         # Load ALL downloads from database (including completed)
@@ -248,7 +266,7 @@ class DownloadManager:
         """Main download task for a single download"""
         try:
             self._speed_tracker[download.id] = []
-            
+
             # Create segment temp files if needed
             for segment in download.segments:
                 if not segment.temp_file:
@@ -273,71 +291,146 @@ class DownloadManager:
                 # Ensure file exists (might have been cleaned up)
                 if not os.path.exists(segment.temp_file):
                     Path(segment.temp_file).touch()
-            
+
             # Create segment downloaders
             def progress_callback(segment_index: int, bytes_downloaded: int):
                 self._on_segment_progress(download, segment_index, bytes_downloaded)
-            
+
             downloaders = [
                 SegmentDownloader(
                     url=download.url,
                     segment=segment,
                     session=self._session,
                     progress_callback=progress_callback,
-                    rate_limit=self.rate_limit
+                    rate_limit=self.rate_limit,
+                    proxy_url=self.proxy_url
                 )
                 for segment in download.segments
                 if not segment.completed
             ]
-            
+
             self.segment_downloaders[download.id] = downloaders
-            
+
             # Download all segments concurrently
             tasks = [asyncio.create_task(d.download()) for d in downloaders]
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            
+
             # Check if all segments completed
             all_completed = all(s.completed for s in download.segments)
-            
+
             if all_completed:
                 # Merge segments into final file
                 segment_files = [s.temp_file for s in sorted(download.segments, key=lambda x: x.index)]
                 await merge_segments(segment_files, download.save_path)
-                
-                download.status = DownloadStatus.COMPLETED
-                download.completed_at = datetime.now()
-                download.downloaded_size = download.total_size
+
+                # Verify checksum if expected checksum is set
+                if download.expected_checksum:
+                    try:
+                        verified = ChecksumVerifier.verify_checksum(
+                            download.save_path,
+                            download.expected_checksum,
+                            download.checksum_algorithm or 'sha256'
+                        )
+
+                        if verified:
+                            # Calculate and store the actual checksum
+                            download.checksum = ChecksumVerifier.calculate_file_hash(
+                                download.save_path,
+                                download.checksum_algorithm or 'sha256'
+                            )
+                            download.checksum_algorithm = download.checksum_algorithm or 'sha256'
+                            download.status = DownloadStatus.COMPLETED
+                            download.completed_at = datetime.now()
+                            download.downloaded_size = download.total_size
+                        else:
+                            download.status = DownloadStatus.FAILED
+                            download.error_message = f"Checksum verification failed. Expected {download.checksum_algorithm.upper()}: {download.expected_checksum[:12]}..."
+                            # Don't delete the file so user can manually verify
+                    except Exception as e:
+                        download.status = DownloadStatus.FAILED
+                        download.error_message = f"Checksum verification error: {str(e)}"
+                else:
+                    # No checksum verification required
+                    download.status = DownloadStatus.COMPLETED
+                    download.completed_at = datetime.now()
+                    download.downloaded_size = download.total_size
             else:
-                # Some segments failed
-                download.status = DownloadStatus.FAILED
-                download.error_message = "One or more segments failed to download"
-            
+                # Some segments failed - check if we should retry
+                if self.enable_retry and download.retry_count < self.max_retries:
+                    download.retry_count += 1
+                    download.status = DownloadStatus.PAUSED  # Temporarily pause for retry
+                    download.error_message = f"Download failed. Retry {download.retry_count}/{self.max_retries} in {self._calculate_retry_delay(download.retry_count):.1f}s..."
+                    self.db.save_download(download)
+                    self._notify_status(download)
+
+                    # Calculate delay with exponential backoff
+                    delay = self._calculate_retry_delay(download.retry_count)
+                    await asyncio.sleep(delay)
+
+                    # Retry download
+                    await self.start_download(download.id)
+                    return
+                else:
+                    download.status = DownloadStatus.FAILED
+                    if download.retry_count > 0:
+                        download.error_message = f"Download failed after {download.retry_count} retry attempts"
+                    else:
+                        download.error_message = "One or more segments failed to download"
+
             # Cleanup
             if download.id in self.segment_downloaders:
                 del self.segment_downloaders[download.id]
             if download.id in self._speed_tracker:
                 del self._speed_tracker[download.id]
-            
+
             self.db.save_download(download)
             self._notify_status(download)
-            
+
             # Start next queued download
             await self._start_next_queued()
-            
+
         except asyncio.CancelledError:
             # Download was paused or cancelled
             self.db.save_download(download)
             raise
         except Exception as e:
-            download.status = DownloadStatus.FAILED
-            download.error_message = str(e)
-            self.db.save_download(download)
-            self._notify_status(download)
-            
+            # Check if we should retry on exception
+            if self.enable_retry and download.retry_count < self.max_retries:
+                download.retry_count += 1
+                download.status = DownloadStatus.PAUSED
+                download.error_message = f"Error: {str(e)}. Retry {download.retry_count}/{self.max_retries} in {self._calculate_retry_delay(download.retry_count):.1f}s..."
+                self.db.save_download(download)
+                self._notify_status(download)
+
+                # Calculate delay with exponential backoff
+                delay = self._calculate_retry_delay(download.retry_count)
+                await asyncio.sleep(delay)
+
+                # Retry download
+                await self.start_download(download.id)
+                return
+            else:
+                download.status = DownloadStatus.FAILED
+                download.error_message = str(e)
+                self.db.save_download(download)
+                self._notify_status(download)
+
             await self._start_next_queued()
         finally:
             if download.id in self.active_tasks:
                 del self.active_tasks[download.id]
+
+    def _calculate_retry_delay(self, retry_count: int) -> float:
+        """
+        Calculate retry delay with exponential backoff.
+
+        Args:
+            retry_count: Current retry attempt number (1-based)
+
+        Returns:
+            Delay in seconds
+        """
+        return self.retry_delay * (self.retry_backoff ** (retry_count - 1))
     
     def _on_segment_progress(self, download: Download, segment_index: int, bytes_downloaded: int):
         """Called when segment downloads some bytes"""
@@ -390,7 +483,8 @@ class DownloadManager:
                 headers=headers,
                 timeout=timeout,
                 allow_redirects=True,
-                max_redirects=10  # Prevent infinite redirects and SSRF
+                max_redirects=10,  # Prevent infinite redirects and SSRF
+                proxy=self.proxy_url
             ) as response:
                 content_length = response.headers.get('Content-Length')
                 content_disposition = response.headers.get('Content-Disposition')

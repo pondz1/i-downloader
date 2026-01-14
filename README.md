@@ -53,11 +53,11 @@ python main.py
 
 ### 🔧 Medium Priority
 
-- [ ] **Auto-retry on Failure** - Automatically retry failed downloads
-- [ ] **Download History** - Complete history with search and filter
-- [ ] **Notifications** - Windows toast notifications on completion
-- [ ] **Checksum Verification** - Verify MD5/SHA256 after download
-- [ ] **Proxy Support** - HTTP/SOCKS proxy configuration
+- [x] **Auto-retry on Failure** - Automatically retry failed downloads
+- [x] **Download History** - Complete history with search and filter
+- [x] **Notifications** - Windows toast notifications on completion
+- [x] **Checksum Verification** - Verify MD5/SHA256 after download
+- [x] **Proxy Support** - HTTP/SOCKS proxy configuration
 
 ### 🚀 Advanced Features
 

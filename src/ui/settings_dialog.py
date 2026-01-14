@@ -205,7 +205,92 @@ class SettingsDialog(QDialog):
         behavior_layout.addRow(self.watch_clipboard_cb)
 
         layout.addWidget(behavior_group)
-        
+
+        # Retry Settings
+        retry_group = QGroupBox("Auto-Retry")
+        retry_layout = QFormLayout(retry_group)
+
+        self.enable_retry_cb = QCheckBox("Enable auto-retry on failure")
+        retry_layout.addRow(self.enable_retry_cb)
+
+        # Max retries - using custom SpinBox
+        self.max_retries_spin = StyledSpinBox(min_val=0, max_val=10, value=3)
+        self.max_retries_spin.setToolTip("Number of times to retry a failed download (0 = no retry)")
+        retry_layout.addRow("Max Retries:", self.max_retries_spin)
+
+        # Retry delay input
+        retry_delay_layout = QHBoxLayout()
+        self.retry_delay_input = QLineEdit()
+        self.retry_delay_input.setText("5")
+        retry_delay_layout.addWidget(self.retry_delay_input)
+
+        self.retry_delay_unit = QLabel("seconds")
+        retry_delay_layout.addWidget(self.retry_delay_unit)
+
+        self.retry_delay_hint = QLabel("(before first retry)")
+        self.retry_delay_hint.setStyleSheet("color: #888; font-size: 11px;")
+        retry_delay_layout.addWidget(self.retry_delay_hint)
+
+        retry_layout.addRow("Retry Delay:", retry_delay_layout)
+
+        # Retry backoff input
+        backoff_layout = QHBoxLayout()
+        self.retry_backoff_input = QLineEdit()
+        self.retry_backoff_input.setText("2")
+        backoff_layout.addWidget(self.retry_backoff_input)
+
+        self.retry_backoff_unit = QLabel("x (multiplier)")
+        self.retry_backoff_unit.setStyleSheet("color: #888; font-size: 11px;")
+        backoff_layout.addWidget(self.retry_backoff_unit)
+
+        retry_layout.addRow("Backoff:", backoff_layout)
+
+        layout.addWidget(retry_group)
+
+        # Proxy Settings
+        proxy_group = QGroupBox("Proxy")
+        proxy_layout = QFormLayout(proxy_group)
+
+        self.proxy_enabled_cb = QCheckBox("Enable proxy")
+        self.proxy_enabled_cb.toggled.connect(self._on_proxy_enabled_toggled)
+        proxy_layout.addRow(self.proxy_enabled_cb)
+
+        # Proxy type
+        self.proxy_type_combo = QComboBox()
+        self.proxy_type_combo.addItem("HTTP", "http")
+        self.proxy_type_combo.addItem("HTTPS", "https")
+        self.proxy_type_combo.addItem("SOCKS4", "socks4")
+        self.proxy_type_combo.addItem("SOCKS5", "socks5")
+        self.proxy_type_combo.setEnabled(False)
+        proxy_layout.addRow("Proxy Type:", self.proxy_type_combo)
+
+        # Proxy host
+        self.proxy_host_input = QLineEdit()
+        self.proxy_host_input.setPlaceholderText("proxy.example.com")
+        self.proxy_host_input.setEnabled(False)
+        proxy_layout.addRow("Proxy Host:", self.proxy_host_input)
+
+        # Proxy port
+        self.proxy_port_input = QLineEdit()
+        self.proxy_port_input.setPlaceholderText("8080")
+        self.proxy_port_input.setEnabled(False)
+        proxy_layout.addRow("Proxy Port:", self.proxy_port_input)
+
+        # Proxy username (optional)
+        self.proxy_username_input = QLineEdit()
+        self.proxy_username_input.setPlaceholderText("(optional)")
+        self.proxy_username_input.setEnabled(False)
+        proxy_layout.addRow("Username:", self.proxy_username_input)
+
+        # Proxy password (optional)
+        self.proxy_password_input = QLineEdit()
+        self.proxy_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.proxy_password_input.setPlaceholderText("(optional)")
+        self.proxy_password_input.setEnabled(False)
+        proxy_layout.addRow("Password:", self.proxy_password_input)
+
+        layout.addWidget(proxy_group)
+
         # Spacer
         layout.addStretch()
         
@@ -238,7 +323,15 @@ class SettingsDialog(QDialog):
         """Handle limit speed checkbox toggle"""
         self.speed_limit_input.setEnabled(checked)
         self.speed_limit_unit.setEnabled(checked)
-    
+
+    def _on_proxy_enabled_toggled(self, checked: bool):
+        """Handle proxy enabled checkbox toggle"""
+        self.proxy_type_combo.setEnabled(checked)
+        self.proxy_host_input.setEnabled(checked)
+        self.proxy_port_input.setEnabled(checked)
+        self.proxy_username_input.setEnabled(checked)
+        self.proxy_password_input.setEnabled(checked)
+
     def _load_settings(self):
         """Load settings into UI"""
         self.download_dir_input.setText(
@@ -282,6 +375,42 @@ class SettingsDialog(QDialog):
             self._settings.get('watch_clipboard', False)
         )
 
+        # Load retry settings
+        self.enable_retry_cb.setChecked(
+            self._settings.get('enable_retry', True)
+        )
+        self.max_retries_spin.setValue(
+            self._settings.get('max_retries', 3)
+        )
+        self.retry_delay_input.setText(
+            str(self._settings.get('retry_delay', 5))
+        )
+        self.retry_backoff_input.setText(
+            str(self._settings.get('retry_backoff', 2.0))
+        )
+
+        # Load proxy settings
+        self.proxy_enabled_cb.setChecked(
+            self._settings.get('proxy_enabled', False)
+        )
+        self.proxy_type_combo.setCurrentIndex(
+            0 if self._settings.get('proxy_type', 'http') == 'http' else
+            1 if self._settings.get('proxy_type', 'http') == 'https' else
+            2 if self._settings.get('proxy_type', 'http') == 'socks4' else 3
+        )
+        self.proxy_host_input.setText(
+            self._settings.get('proxy_host', '')
+        )
+        self.proxy_port_input.setText(
+            str(self._settings.get('proxy_port', ''))
+        )
+        self.proxy_username_input.setText(
+            self._settings.get('proxy_username', '')
+        )
+        self.proxy_password_input.setText(
+            self._settings.get('proxy_password', '')
+        )
+
     def _on_save_click(self):
         """Handle save button click"""
         # Calculate rate limit in bytes per second
@@ -304,7 +433,19 @@ class SettingsDialog(QDialog):
             'close_to_tray': self.close_to_tray_cb.isChecked(),
             'notify_complete': self.notify_complete_cb.isChecked(),
             'auto_start': self.auto_start_cb.isChecked(),
-            'watch_clipboard': self.watch_clipboard_cb.isChecked()
+            'watch_clipboard': self.watch_clipboard_cb.isChecked(),
+            # Retry settings
+            'enable_retry': self.enable_retry_cb.isChecked(),
+            'max_retries': self.max_retries_spin.value(),
+            'retry_delay': float(self.retry_delay_input.text()),
+            'retry_backoff': float(self.retry_backoff_input.text()),
+            # Proxy settings
+            'proxy_enabled': self.proxy_enabled_cb.isChecked(),
+            'proxy_type': self.proxy_type_combo.currentData(),
+            'proxy_host': self.proxy_host_input.text().strip(),
+            'proxy_port': self.proxy_port_input.text().strip(),
+            'proxy_username': self.proxy_username_input.text().strip(),
+            'proxy_password': self.proxy_password_input.text()
         }
 
         self.settings_changed.emit(settings)

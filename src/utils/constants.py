@@ -16,6 +16,11 @@ DEFAULT_MAX_CONCURRENT = 3
 DEFAULT_TIMEOUT = 30  # seconds
 DEFAULT_CHUNK_SIZE = 1024 * 64  # 64KB
 
+# Retry settings
+DEFAULT_MAX_RETRIES = 3
+DEFAULT_RETRY_DELAY = 5.0  # seconds
+DEFAULT_RETRY_BACKOFF = 2.0  # multiplier
+
 # Download status
 class DownloadStatus:
     QUEUED = "queued"

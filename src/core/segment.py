@@ -23,7 +23,8 @@ class SegmentDownloader:
         session: aiohttp.ClientSession,
         progress_callback: Optional[Callable[[int, int], None]] = None,
         chunk_size: int = DEFAULT_CHUNK_SIZE,
-        rate_limit: Optional[float] = None  # bytes per second
+        rate_limit: Optional[float] = None,  # bytes per second
+        proxy_url: Optional[str] = None
     ):
         self.url = url
         self.segment = segment
@@ -31,6 +32,7 @@ class SegmentDownloader:
         self.progress_callback = progress_callback
         self.chunk_size = chunk_size
         self.rate_limit = rate_limit  # Rate limit in bytes per second
+        self.proxy_url = proxy_url
         self._cancelled = False
         self._paused = False
         self._pause_event = asyncio.Event()
@@ -64,7 +66,8 @@ class SegmentDownloader:
                 self.url,
                 headers=headers,
                 timeout=timeout,
-                max_redirects=10  # Prevent infinite redirects
+                max_redirects=10,  # Prevent infinite redirects
+                proxy=self.proxy_url
             ) as response:
                 if response.status not in (200, 206):
                     return False

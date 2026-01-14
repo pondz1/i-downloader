@@ -14,7 +14,7 @@ from typing import Dict, Optional
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QScrollArea, QFrame, QToolBar, QStatusBar,
-    QSystemTrayIcon, QMenu, QMessageBox, QApplication
+    QSystemTrayIcon, QMenu, QMessageBox, QApplication, QTabWidget
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSlot, QSize
 from PyQt6.QtGui import QIcon, QAction, QCloseEvent
@@ -31,11 +31,12 @@ from .download_dialog import DownloadDialog
 from .settings_dialog import SettingsDialog
 from .clipboard_monitor import ClipboardMonitor
 from .batch_dialog import BatchImportDialog
+from .history_view import HistoryViewWidget
 from ..core.downloader import DownloadManager
 from ..core.scheduler import DownloadScheduler
 from ..models.download import Download
 from ..utils.constants import (
-    APP_NAME, APP_VERSION, APP_DATA_DIR, 
+    APP_NAME, APP_VERSION, APP_DATA_DIR,
     DEFAULT_DOWNLOAD_DIR, DEFAULT_SEGMENTS, DEFAULT_MAX_CONCURRENT,
     DownloadStatus
 )
@@ -87,6 +88,9 @@ class MainWindow(QMainWindow):
 
         # Scheduler
         self._scheduler: Optional[DownloadScheduler] = None
+
+        # Notification manager
+        self._notification_manager = None
 
         # Setup UI
         self._setup_window()
@@ -178,50 +182,72 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(self.settings_btn)
     
     def _setup_central_widget(self):
-        """Setup the central widget with download list"""
+        """Setup the central widget with tabs"""
         central = QWidget()
         self.setCentralWidget(central)
-        
+
         layout = QVBoxLayout(central)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(10)
-        
+
+        # Create tab widget
+        self.tab_widget = QTabWidget()
+        self.tab_widget.setObjectName("mainTabWidget")
+
+        # Downloads tab
+        downloads_tab = QWidget()
+        downloads_layout = QVBoxLayout(downloads_tab)
+        downloads_layout.setContentsMargins(0, 0, 0, 0)
+        downloads_layout.setSpacing(10)
+
         # Header
         header_layout = QHBoxLayout()
-        
         title = QLabel("Downloads")
         title.setObjectName("titleLabel")
         header_layout.addWidget(title)
-        
         header_layout.addStretch()
-        
         self.download_count_label = QLabel("0 downloads")
         self.download_count_label.setObjectName("subtitleLabel")
         header_layout.addWidget(self.download_count_label)
-        
-        layout.addLayout(header_layout)
-        
+        downloads_layout.addLayout(header_layout)
+
         # Scroll area for downloads
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        
+
         self.downloads_container = QWidget()
         self.downloads_layout = QVBoxLayout(self.downloads_container)
         self.downloads_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.downloads_layout.setSpacing(10)
         self.downloads_layout.setContentsMargins(0, 0, 0, 0)
-        
+
         scroll.setWidget(self.downloads_container)
-        layout.addWidget(scroll)
-        
+        downloads_layout.addWidget(scroll)
+
         # Empty state
         self.empty_label = QLabel("No downloads yet. Click '+ Add Download' to start.")
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty_label.setObjectName("subtitleLabel")
         self.empty_label.setStyleSheet("padding: 50px; color: #666;")
         self.downloads_layout.addWidget(self.empty_label)
+
+        # Add downloads tab
+        self.tab_widget.addTab(downloads_tab, "Downloads")
+
+        # History tab
+        self.history_view = HistoryViewWidget()
+        self.history_view.open_file_requested.connect(self._on_open_file)
+        self.history_view.open_folder_requested.connect(self._on_open_folder)
+        self.history_view.delete_requested.connect(self._on_history_delete)
+        self.history_view.retry_requested.connect(self._on_history_retry)
+        self.tab_widget.addTab(self.history_view, "History")
+
+        layout.addWidget(self.tab_widget)
+
+        # Connect tab change to refresh history
+        self.tab_widget.currentChanged.connect(self._on_tab_changed)
     
     def _setup_status_bar(self):
         """Setup the status bar"""
@@ -269,18 +295,43 @@ class MainWindow(QMainWindow):
 
         # Initialize download manager
         rate_limit = self._settings.get('rate_limit', 0)
+
+        # Build proxy URL if enabled
+        proxy_url = None
+        if self._settings.get('proxy_enabled', False):
+            proxy_type = self._settings.get('proxy_type', 'http')
+            proxy_host = self._settings.get('proxy_host', '')
+            proxy_port = self._settings.get('proxy_port', '')
+            proxy_username = self._settings.get('proxy_username', '')
+            proxy_password = self._settings.get('proxy_password', '')
+
+            if proxy_host and proxy_port:
+                if proxy_username:
+                    proxy_url = f"{proxy_type}://{proxy_username}:{proxy_password}@{proxy_host}:{proxy_port}"
+                else:
+                    proxy_url = f"{proxy_type}://{proxy_host}:{proxy_port}"
+
         self._download_manager = DownloadManager(
             max_concurrent=self._settings.get('max_concurrent', DEFAULT_MAX_CONCURRENT),
             default_segments=self._settings.get('default_segments', DEFAULT_SEGMENTS),
             progress_callback=self._on_download_progress,
             status_callback=self._on_download_status_changed,
-            rate_limit=rate_limit if rate_limit > 0 else None
+            rate_limit=rate_limit if rate_limit > 0 else None,
+            proxy_url=proxy_url,
+            enable_retry=self._settings.get('enable_retry', True),
+            max_retries=self._settings.get('max_retries', 3),
+            retry_delay=self._settings.get('retry_delay', 5.0),
+            retry_backoff=self._settings.get('retry_backoff', 2.0)
         )
         await self._download_manager.initialize()
 
         # Initialize scheduler
         self._scheduler = DownloadScheduler(self._start_scheduled_download)
         await self._scheduler.start()
+
+        # Initialize notification manager
+        from ..utils.notifications import NotificationManager
+        self._notification_manager = NotificationManager()
 
         # Initialize clipboard monitor
         self._clipboard_monitor = ClipboardMonitor(self)
@@ -346,7 +397,7 @@ class MainWindow(QMainWindow):
 
         self._clipboard_dialog_shown = False
 
-    def _start_new_download(self, url: str, save_dir: str, num_segments: int, category: str = "all", scheduled_time=None):
+    def _start_new_download(self, url: str, save_dir: str, num_segments: int, category: str = "all", scheduled_time=None, expected_checksum: str = "", checksum_algorithm: str = ""):
         """Start a new download"""
         if scheduled_time and self._scheduler:
             # Schedule the download
@@ -358,11 +409,11 @@ class MainWindow(QMainWindow):
             )
         elif self._loop and self._download_manager:
             asyncio.run_coroutine_threadsafe(
-                self._add_and_start_download(url, save_dir, num_segments, category),
+                self._add_and_start_download(url, save_dir, num_segments, category, expected_checksum, checksum_algorithm),
                 self._loop
             )
     
-    async def _add_and_start_download(self, url: str, save_dir: str, num_segments: int, category: str = "all"):
+    async def _add_and_start_download(self, url: str, save_dir: str, num_segments: int, category: str = "all", expected_checksum: str = "", checksum_algorithm: str = ""):
         """Add and start a download (async)"""
         try:
             import os
@@ -376,6 +427,11 @@ class MainWindow(QMainWindow):
                 save_dir=save_dir,
                 num_segments=num_segments
             )
+
+            # Set checksum information if provided
+            if expected_checksum:
+                download.expected_checksum = expected_checksum
+                download.checksum_algorithm = checksum_algorithm
 
             # Handle auto category detection
             if category == "auto":
@@ -449,6 +505,20 @@ class MainWindow(QMainWindow):
     
     def _on_download_status_changed(self, download: Download):
         """Callback for download status changes"""
+        # Show notification if enabled and download completed or failed
+        if self._notification_manager and self._settings.get('notify_complete', True):
+            if download.status == DownloadStatus.COMPLETED:
+                self._notification_manager.show_completion(
+                    download.filename,
+                    format_size(download.total_size),
+                    format_speed(download.speed)
+                )
+            elif download.status == DownloadStatus.FAILED:
+                self._notification_manager.show_failure(
+                    download.filename,
+                    download.error_message or "Unknown error"
+                )
+
         QTimer.singleShot(0, lambda: self._update_download_widget(download))
     
     def _update_download_widget(self, download: Download):
@@ -589,6 +659,31 @@ class MainWindow(QMainWindow):
             rate_limit = settings.get('rate_limit', 0)
             self._download_manager.rate_limit = rate_limit if rate_limit > 0 else None
 
+            # Apply retry settings
+            self._download_manager.enable_retry = settings.get('enable_retry', True)
+            self._download_manager.max_retries = settings.get('max_retries', 3)
+            self._download_manager.retry_delay = settings.get('retry_delay', 5.0)
+            self._download_manager.retry_backoff = settings.get('retry_backoff', 2.0)
+
+            # Apply proxy settings - requires rebuilding session
+            proxy_url = None
+            if settings.get('proxy_enabled', False):
+                proxy_type = settings.get('proxy_type', 'http')
+                proxy_host = settings.get('proxy_host', '')
+                proxy_port = settings.get('proxy_port', '')
+                proxy_username = settings.get('proxy_username', '')
+                proxy_password = settings.get('proxy_password', '')
+
+                if proxy_host and proxy_port:
+                    if proxy_username:
+                        proxy_url = f"{proxy_type}://{proxy_username}:{proxy_password}@{proxy_host}:{proxy_port}"
+                    else:
+                        proxy_url = f"{proxy_type}://{proxy_host}:{proxy_port}"
+
+            self._download_manager.proxy_url = proxy_url
+            # Note: Proxy changes require restarting the download manager for active downloads
+            # This is a limitation of aiohttp's session architecture
+
         # Apply to clipboard monitor
         if self._clipboard_monitor:
             self._clipboard_monitor.set_enabled(settings.get('watch_clipboard', False))
@@ -632,14 +727,60 @@ class MainWindow(QMainWindow):
         else:
             # Stop the update timer first
             self._update_timer.stop()
-            
+
             # Save all downloads synchronously
             if self._download_manager:
                 for download in self._download_manager.get_all_downloads():
                     self._download_manager.db.save_download(download)
-            
+
             # Close tray icon
             if hasattr(self, 'tray_icon'):
                 self.tray_icon.hide()
-            
+
             event.accept()
+
+    def _on_tab_changed(self, index: int):
+        """Handle tab change"""
+        if index == 1:  # History tab
+            self._refresh_history()
+
+    def _refresh_history(self):
+        """Refresh the history view"""
+        if hasattr(self, 'history_view') and self._download_manager:
+            completed_downloads = self._download_manager.db.get_completed_downloads()
+            self.history_view.set_downloads(completed_downloads)
+
+    def _on_history_delete(self, download_id: str):
+        """Handle delete from history"""
+        if self._download_manager:
+            self._download_manager.db.delete_download(download_id)
+            if download_id in self._download_manager.downloads:
+                del self._download_manager.downloads[download_id]
+            self._refresh_history()
+
+    def _on_history_retry(self, download_id: str):
+        """Handle retry from history"""
+        if self._loop and self._download_manager:
+            download = self._download_manager.get_download(download_id)
+            if download:
+                # Reset download for retry
+                download.status = DownloadStatus.QUEUED
+                download.downloaded_size = 0
+                download.retry_count = 0
+                download.error_message = ""
+                for segment in download.segments:
+                    segment.downloaded = 0
+                    segment.completed = False
+
+                # Remove from history and add back to active downloads
+                self._download_manager.db.save_download(download)
+                self._add_download_widget(download)
+
+                # Start the download
+                asyncio.run_coroutine_threadsafe(
+                    self._download_manager.start_download(download_id),
+                    self._loop
+                )
+
+                # Refresh history
+                self._refresh_history()
