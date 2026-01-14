@@ -3,6 +3,7 @@ Application constants and configuration
 """
 
 import os
+import uuid
 from pathlib import Path
 
 # Application info
@@ -43,3 +44,13 @@ APP_DATA_DIR.mkdir(exist_ok=True)
 
 # User agent for HTTP requests
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+
+def generate_id() -> str:
+    """
+    Generate a unique ID for downloads.
+
+    Returns:
+        A unique identifier string
+    """
+    return str(uuid.uuid4())

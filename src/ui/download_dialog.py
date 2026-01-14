@@ -3,6 +3,7 @@ New download dialog - for adding new downloads
 """
 
 import os
+from pathlib import Path
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QFileDialog, QSpinBox, QGroupBox, QFormLayout,
@@ -14,6 +15,7 @@ from PyQt6.QtGui import QFont
 from ..utils.constants import DEFAULT_DOWNLOAD_DIR, DEFAULT_SEGMENTS
 from ..utils.helpers import is_valid_url
 from ..utils.categories import get_all_categories, get_category_save_path, get_category_name, get_category_from_filename
+from ..utils.video_sites import is_video_url, is_playlist_url, get_video_site_name
 from .settings_dialog import StyledSpinBox
 
 
@@ -22,6 +24,9 @@ class DownloadDialog(QDialog):
 
     # Signal emitted when download is confirmed
     download_requested = pyqtSignal(str, str, int, str, object, str, str)  # url, save_dir, num_segments, category, scheduled_time, expected_checksum, checksum_algorithm
+
+    # Signal emitted when video download is requested
+    video_download_requested = pyqtSignal(str, str, str)  # url, save_dir, category
 
     def __init__(self, parent=None, url: str = ""):
         super().__init__(parent)
@@ -178,6 +183,21 @@ class DownloadDialog(QDialog):
             self.url_status.setText("Enter a download URL")
             self.url_status.setStyleSheet("color: #888; font-size: 11px;")
             self.download_btn.setEnabled(False)
+        elif is_video_url(url):
+            # Video URL detected
+            site_name = get_video_site_name(url)
+            if is_playlist_url(url):
+                self.url_status.setText(f"✓ Playlist detected on {site_name}")
+            else:
+                self.url_status.setText(f"✓ Video detected on {site_name}")
+            self.url_status.setStyleSheet("color: #4cc9f0; font-size: 11px;")
+            self.download_btn.setEnabled(True)
+
+            # Auto-detect category as videos
+            self._auto_detect_category(url)
+
+            # Disable segments for videos (not applicable)
+            self.segments_spin.setEnabled(False)
         elif is_valid_url(url):
             self.url_status.setText("✓ Valid URL")
             self.url_status.setStyleSheet("color: #4CAF50; font-size: 11px;")
@@ -185,6 +205,9 @@ class DownloadDialog(QDialog):
 
             # Auto-detect category from URL
             self._auto_detect_category(url)
+
+            # Re-enable segments for regular downloads
+            self.segments_spin.setEnabled(True)
         else:
             self.url_status.setText("✕ Invalid URL (must start with http:// or https://)")
             self.url_status.setStyleSheet("color: #F44336; font-size: 11px;")
@@ -264,12 +287,25 @@ class DownloadDialog(QDialog):
         category = self.category_combo.currentData()
 
         # Validate
-        if not is_valid_url(url):
+        if not is_valid_url(url) and not is_video_url(url):
             QMessageBox.warning(self, "Invalid URL", "Please enter a valid download URL.")
             return
 
+        # Validate path - check if directory exists or if parent directory exists (for category subfolders)
         if not os.path.isdir(save_dir):
-            QMessageBox.warning(self, "Invalid Path", "The save location does not exist.")
+            # Check if it's a category subfolder that doesn't exist yet
+            # If parent directory exists, that's okay - we'll create the subfolder when downloading
+            parent_dir = str(Path(save_dir).parent)
+            if not os.path.isdir(parent_dir) and parent_dir != save_dir:
+                QMessageBox.warning(self, "Invalid Path", "The save location does not exist.")
+                return
+
+        # Check if this is a video URL
+        if is_video_url(url):
+            # For video URLs, emit video download signal
+            # Format selection will happen in the main window
+            self.video_download_requested.emit(url, save_dir, category)
+            self.accept()
             return
 
         # Get checksum information if verification is enabled

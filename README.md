@@ -19,6 +19,7 @@ A fast, multi-threaded download manager built with Python and PyQt6.
 - 🔄 **Auto-Retry** - Automatically retry failed downloads
 - 🚦 **Bandwidth Limiter** - Control download speeds
 - 🌐 **Proxy Support** - HTTP/SOCKS proxy configuration
+- 🎬 **Video Downloads** - Download from 100+ sites (YouTube, TikTok, Twitter, etc.) with format selection
 
 ## Requirements
 
@@ -28,6 +29,9 @@ A fast, multi-threaded download manager built with Python and PyQt6.
 ## Installation
 
 ```bash
+# Install Env
+python -m venv .venv
+
 # Install dependencies
 pip install -r requirements.txt
 
@@ -109,17 +113,49 @@ Route downloads through proxy servers:
 - Authentication support (username/password)
 - Configure in Settings → Network
 
+### 🎬 Video Downloads
+Download videos from 100+ supported sites:
+- **Supported Sites**: YouTube, TikTok, Twitter/X, Instagram, Vimeo, Twitch, Facebook, Reddit, and many more
+- **Format Selection**: Choose video quality (1080p, 720p, 480p, etc.) and format (MP4, WebM)
+- **Audio Only**: Download audio track separately
+- **Playlists**: Download entire playlists with one click
+- **Progress Tracking**: Real-time download progress with speed and ETA
+
+**How to Use**:
+1. Paste a video URL (e.g., YouTube link)
+2. The app will detect it's a video and show "Video detected on [Site Name]"
+3. Click "Download" to see format options
+4. Select your preferred quality and format
+5. For playlists, confirm to download all videos
+
+Videos are automatically saved to the "Videos" category.
+
 ## Roadmap
 
 ### ✅ Completed
 
-Core download management functionality is fully implemented, including multi-threaded downloads, pause/resume, queue management, and all features listed above.
+Core download management functionality is fully implemented, including:
+- Multi-threaded downloads with pause/resume
+- Download queue with priority management
+- Progress tracking with real-time speed and ETA
+- System tray integration
+- Settings management
+- Clipboard monitoring
+- Download categories with auto-organization
+- Download scheduler
+- Bandwidth limiting
+- Batch URL import
+- Auto-retry on failure
+- Download history with search and filter
+- Desktop notifications
+- Checksum verification (MD5/SHA256)
+- Proxy support (HTTP/HTTPS/SOCKS)
+- **Video site integration** - Support for 100+ video sites including YouTube, TikTok, Twitter, Instagram, Vimeo, and more
 
 ### 🚀 Planned Features
 
 Future enhancements planned for development:
 
-- [ ] **Video Site Integration** - YouTube, TikTok, Twitter support via yt-dlp
 - [ ] **Torrent Support** - Magnet links and .torrent files with full P2P functionality
 - [ ] **Cloud Integration** - Direct upload to Google Drive, OneDrive, Dropbox
 - [ ] **Keyboard Shortcuts** - Global hotkeys for quick actions

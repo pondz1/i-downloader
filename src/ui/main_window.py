@@ -14,7 +14,7 @@ from typing import Dict, Optional
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QScrollArea, QFrame, QToolBar, QStatusBar,
-    QSystemTrayIcon, QMenu, QMessageBox, QApplication, QTabWidget
+    QSystemTrayIcon, QMenu, QMessageBox, QApplication, QTabWidget, QDialog
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSlot, QSize
 from PyQt6.QtGui import QIcon, QAction, QCloseEvent
@@ -356,6 +356,7 @@ class MainWindow(QMainWindow):
         """Handle add download button click"""
         dialog = DownloadDialog(self)
         dialog.download_requested.connect(self._start_new_download)
+        dialog.video_download_requested.connect(self._on_video_download_requested)
         dialog.exec()
 
     def _on_batch_import(self):
@@ -393,6 +394,7 @@ class MainWindow(QMainWindow):
             # Show download dialog with the URL
             dialog = DownloadDialog(self, url=url)
             dialog.download_requested.connect(self._start_new_download)
+            dialog.video_download_requested.connect(self._on_video_download_requested)
             dialog.exec()
 
         self._clipboard_dialog_shown = False
@@ -412,7 +414,192 @@ class MainWindow(QMainWindow):
                 self._add_and_start_download(url, save_dir, num_segments, category, expected_checksum, checksum_algorithm),
                 self._loop
             )
-    
+
+    def _on_video_download_requested(self, url: str, save_dir: str, category: str):
+        """Handle video download request - show format selection dialog"""
+        from .video_format_dialog import VideoFormatDialog
+
+        # Show format selection dialog
+        dialog = VideoFormatDialog(url, self)
+        dialog.format_selected.connect(lambda format_id, video_info: self._start_video_download(url, save_dir, format_id, category))
+        result = dialog.exec()
+
+        if result != QDialog.DialogCode.Accepted:
+            # User cancelled
+            pass
+
+    def _start_video_download(self, url: str, save_dir: str, format_id: str, category: str):
+        """Start a video download with selected format"""
+        if self._loop and self._download_manager:
+            asyncio.run_coroutine_threadsafe(
+                self._add_and_start_video_download(url, save_dir, format_id, category),
+                self._loop
+            )
+
+    async def _add_and_start_video_download(self, url: str, save_dir: str, format_id: str, category: str):
+        """Add and start a video download (async)"""
+        try:
+            from ..core.video_downloader import VideoDownloader
+            from ..models.download import DownloadStatus
+            import os
+
+            # Ensure save directory exists
+            os.makedirs(save_dir, exist_ok=True)
+
+            # Create video downloader
+            video_downloader = VideoDownloader()
+
+            # Get video info first
+            info = await video_downloader.get_video_info(url)
+
+            # Check if it's a playlist
+            if info.get('is_playlist'):
+                # Handle playlist download
+                await self._handle_playlist_download(url, save_dir, format_id, category, info)
+                return
+
+            # Create a download object for the video
+            filename = f"{info['title']}.mp4"  # Default extension
+
+            # Import Download model
+            from ..models.download import Download
+            from ..utils.constants import generate_id
+
+            download_id = generate_id()
+
+            download = Download(
+                id=download_id,
+                url=url,
+                save_path=os.path.join(save_dir, filename),
+                filename=filename,
+                total_size=info.get('filesize', 0) or 0,
+                num_segments=1,  # Video downloads don't use segments
+                status=DownloadStatus.DOWNLOADING,  # Set to downloading immediately
+            )
+
+            # Store video-specific info
+            download.format_id = format_id
+            download.is_video = True
+            download.video_title = info.get('title', 'Unknown')
+            download.thumbnail_url = info.get('thumbnail', '')
+
+            # Add to download manager tracking
+            self._download_manager.downloads[download_id] = download
+
+            # Add widget on main thread AFTER setting status to DOWNLOADING
+            QTimer.singleShot(0, lambda: self._add_download_widget(download))
+
+            # Start the download
+            await self._download_video_with_progress(download, video_downloader)
+
+        except Exception as e:
+            error_msg = str(e)
+            QTimer.singleShot(0, lambda msg=error_msg: QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to start video download:\n\n{msg}"
+            ))
+
+    async def _download_video_with_progress(self, download, video_downloader):
+        """Download video with progress tracking"""
+        try:
+            from ..models.download import DownloadStatus
+            import os
+
+            save_dir = os.path.dirname(download.save_path)
+
+            def progress_callback(progress, downloaded, total, speed):
+                """Progress callback from video downloader"""
+                # Update download progress - progress is calculated from downloaded_size / total_size
+                download.downloaded_size = downloaded
+                download.total_size = total
+                download.speed = speed
+
+                # Notify progress
+                self._download_manager._notify_progress(download)
+
+            # Start download
+            result = await video_downloader.download_video(
+                url=download.url,
+                save_path=save_dir,
+                format_id=download.format_id,
+                progress_callback=progress_callback
+            )
+
+            if result.get('success'):
+                download.status = DownloadStatus.COMPLETED
+                download.downloaded_size = download.total_size  # Ensure 100% progress
+
+                # Update actual filepath if different
+                if result.get('filepath'):
+                    download.save_path = result['filepath']
+
+                # Notify status change
+                self._download_manager._notify_status(download)
+            else:
+                from ..models.download import DownloadStatus
+                download.status = DownloadStatus.FAILED
+                download.error_message = result.get('error', 'Unknown error')
+                self._download_manager._notify_status(download)
+
+        except Exception as e:
+            from ..models.download import DownloadStatus
+            download.status = DownloadStatus.FAILED
+            download.error_message = str(e)
+            self._download_manager._notify_status(download)
+
+    async def _handle_playlist_download(self, url: str, save_dir: str, format_id: str, category: str, info: dict):
+        """Handle playlist download - add all videos to queue"""
+        try:
+            from ..core.video_downloader import VideoDownloader
+
+            video_downloader = VideoDownloader()
+
+            # Get playlist videos
+            playlist_videos = await video_downloader.get_playlist_videos(url)
+
+            # Confirm with user
+            reply = QMessageBox.question(
+                self,
+                "Playlist Detected",
+                f"This URL contains {len(playlist_videos)} videos.\n\nDo you want to download all of them?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+            # Add each video to download queue
+            for i, video in enumerate(playlist_videos):
+                try:
+                    # Recursively call _add_and_start_video_download for each video
+                    await self._add_and_start_video_download(
+                        url=video['url'],
+                        save_dir=save_dir,
+                        format_id=format_id,
+                        category=category
+                    )
+
+                    # Small delay between adding to avoid overwhelming
+                    await asyncio.sleep(0.5)
+
+                except Exception as e:
+                    print(f"Error adding video {i+1} from playlist from playlist: {e}")
+
+            QMessageBox.information(
+                self,
+                "Playlist Queued",
+                f"Added {len(playlist_videos)} videos to the download queue."
+            )
+
+        except Exception as e:
+            error_msg = str(e)
+            QTimer.singleShot(0, lambda msg=error_msg: QMessageBox.critical(
+                self,
+                "Playlist Error",
+                f"Failed to process playlist:\n\n{msg}"
+            ))
+
     async def _add_and_start_download(self, url: str, save_dir: str, num_segments: int, category: str = "all", expected_checksum: str = "", checksum_algorithm: str = ""):
         """Add and start a download (async)"""
         try:
@@ -451,8 +638,9 @@ class MainWindow(QMainWindow):
             if self._settings.get('auto_start', True):
                 await self._download_manager.start_download(download.id)
         except Exception as e:
-            QTimer.singleShot(0, lambda: QMessageBox.critical(
-                self, "Error", f"Failed to add download: {str(e)}"
+            error_msg = str(e)
+            QTimer.singleShot(0, lambda msg=error_msg: QMessageBox.critical(
+                self, "Error", f"Failed to add download: {msg}"
             ))
     
     def _add_download_widget(self, download: Download):
