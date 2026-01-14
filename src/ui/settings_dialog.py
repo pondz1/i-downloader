@@ -5,7 +5,7 @@ Settings dialog - application settings
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QFileDialog, QSpinBox, QGroupBox, QFormLayout,
-    QLineEdit, QCheckBox, QWidget, QComboBox
+    QLineEdit, QCheckBox, QWidget, QComboBox, QTabWidget, QScrollArea
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
@@ -115,9 +115,9 @@ class SettingsDialog(QDialog):
     def _setup_ui(self):
         """Set up the dialog UI"""
         layout = QVBoxLayout(self)
-        layout.setSpacing(20)
-        layout.setContentsMargins(25, 25, 25, 25)
-        
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+
         # Title
         title = QLabel("Settings")
         title.setObjectName("titleLabel")
@@ -126,33 +126,121 @@ class SettingsDialog(QDialog):
         font.setBold(True)
         title.setFont(font)
         layout.addWidget(title)
-        
+
+        # Create tab widget
+        self.tab_widget = QTabWidget()
+        self.tab_widget.setStyleSheet("""
+            QTabWidget::pane {
+                border: 1px solid #0f3460;
+                border-radius: 8px;
+                background-color: #1a1a2e;
+            }
+            QTabBar::tab {
+                background-color: #16213e;
+                color: #eaeaea;
+                padding: 10px 20px;
+                margin-right: 2px;
+                border-top-left-radius: 6px;
+                border-top-right-radius: 6px;
+                font-weight: bold;
+            }
+            QTabBar::tab:selected {
+                background-color: #0f3460;
+                color: #4cc9f0;
+            }
+            QTabBar::tab:hover {
+                background-color: #1a1a2e;
+            }
+        """)
+        layout.addWidget(self.tab_widget)
+
+        # Create tabs
+        self._create_general_tab()
+        self._create_network_tab()
+        self._create_advanced_tab()
+
+        # Buttons
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(cancel_btn)
+
+        save_btn = QPushButton("Save")
+        save_btn.setObjectName("primaryButton")
+        save_btn.clicked.connect(self._on_save_click)
+        button_layout.addWidget(save_btn)
+
+        layout.addLayout(button_layout)
+
+    def _create_general_tab(self):
+        """Create General settings tab"""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setSpacing(15)
+        layout.setContentsMargins(15, 15, 15, 15)
+
         # Download Settings
         download_group = QGroupBox("Download Settings")
         download_layout = QFormLayout(download_group)
-        
+
         # Default download directory
         dir_layout = QHBoxLayout()
         self.download_dir_input = QLineEdit()
         self.download_dir_input.setReadOnly(True)
         dir_layout.addWidget(self.download_dir_input)
-        
+
         browse_btn = QPushButton("Browse...")
         browse_btn.setFixedWidth(100)
         browse_btn.clicked.connect(self._browse_folder)
         dir_layout.addWidget(browse_btn)
-        
+
         download_layout.addRow("Default Save Location:", dir_layout)
-        
+
         # Default segments - using custom SpinBox
         self.segments_spin = StyledSpinBox(min_val=1, max_val=32, value=DEFAULT_SEGMENTS)
         download_layout.addRow("Default Segments:", self.segments_spin)
-        
+
         # Max concurrent downloads - using custom SpinBox
         self.concurrent_spin = StyledSpinBox(min_val=1, max_val=10, value=DEFAULT_MAX_CONCURRENT)
         download_layout.addRow("Max Concurrent Downloads:", self.concurrent_spin)
-        
+
         layout.addWidget(download_group)
+
+        # Behavior Settings
+        behavior_group = QGroupBox("Behavior")
+        behavior_layout = QFormLayout(behavior_group)
+
+        self.start_minimized_cb = QCheckBox("Start minimized to system tray")
+        behavior_layout.addRow(self.start_minimized_cb)
+
+        self.close_to_tray_cb = QCheckBox("Close to system tray instead of exiting")
+        behavior_layout.addRow(self.close_to_tray_cb)
+
+        self.notify_complete_cb = QCheckBox("Show notification when download completes")
+        self.notify_complete_cb.setChecked(True)
+        behavior_layout.addRow(self.notify_complete_cb)
+
+        self.auto_start_cb = QCheckBox("Start downloads automatically when added")
+        self.auto_start_cb.setChecked(True)
+        behavior_layout.addRow(self.auto_start_cb)
+
+        self.watch_clipboard_cb = QCheckBox("Watch clipboard for download URLs")
+        behavior_layout.addRow(self.watch_clipboard_cb)
+
+        layout.addWidget(behavior_group)
+
+        layout.addStretch()
+
+        self.tab_widget.addTab(tab, "General")
+
+    def _create_network_tab(self):
+        """Create Network settings tab"""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setSpacing(15)
+        layout.setContentsMargins(15, 15, 15, 15)
 
         # Bandwidth Settings
         bandwidth_group = QGroupBox("Bandwidth")
@@ -182,70 +270,6 @@ class SettingsDialog(QDialog):
         bandwidth_layout.addRow("Speed Limit:", speed_limit_layout)
 
         layout.addWidget(bandwidth_group)
-
-        # Behavior Settings
-        behavior_group = QGroupBox("Behavior")
-        behavior_layout = QFormLayout(behavior_group)
-        
-        self.start_minimized_cb = QCheckBox("Start minimized to system tray")
-        behavior_layout.addRow(self.start_minimized_cb)
-        
-        self.close_to_tray_cb = QCheckBox("Close to system tray instead of exiting")
-        behavior_layout.addRow(self.close_to_tray_cb)
-        
-        self.notify_complete_cb = QCheckBox("Show notification when download completes")
-        self.notify_complete_cb.setChecked(True)
-        behavior_layout.addRow(self.notify_complete_cb)
-        
-        self.auto_start_cb = QCheckBox("Start downloads automatically when added")
-        self.auto_start_cb.setChecked(True)
-        behavior_layout.addRow(self.auto_start_cb)
-
-        self.watch_clipboard_cb = QCheckBox("Watch clipboard for download URLs")
-        behavior_layout.addRow(self.watch_clipboard_cb)
-
-        layout.addWidget(behavior_group)
-
-        # Retry Settings
-        retry_group = QGroupBox("Auto-Retry")
-        retry_layout = QFormLayout(retry_group)
-
-        self.enable_retry_cb = QCheckBox("Enable auto-retry on failure")
-        retry_layout.addRow(self.enable_retry_cb)
-
-        # Max retries - using custom SpinBox
-        self.max_retries_spin = StyledSpinBox(min_val=0, max_val=10, value=3)
-        self.max_retries_spin.setToolTip("Number of times to retry a failed download (0 = no retry)")
-        retry_layout.addRow("Max Retries:", self.max_retries_spin)
-
-        # Retry delay input
-        retry_delay_layout = QHBoxLayout()
-        self.retry_delay_input = QLineEdit()
-        self.retry_delay_input.setText("5")
-        retry_delay_layout.addWidget(self.retry_delay_input)
-
-        self.retry_delay_unit = QLabel("seconds")
-        retry_delay_layout.addWidget(self.retry_delay_unit)
-
-        self.retry_delay_hint = QLabel("(before first retry)")
-        self.retry_delay_hint.setStyleSheet("color: #888; font-size: 11px;")
-        retry_delay_layout.addWidget(self.retry_delay_hint)
-
-        retry_layout.addRow("Retry Delay:", retry_delay_layout)
-
-        # Retry backoff input
-        backoff_layout = QHBoxLayout()
-        self.retry_backoff_input = QLineEdit()
-        self.retry_backoff_input.setText("2")
-        backoff_layout.addWidget(self.retry_backoff_input)
-
-        self.retry_backoff_unit = QLabel("x (multiplier)")
-        self.retry_backoff_unit.setStyleSheet("color: #888; font-size: 11px;")
-        backoff_layout.addWidget(self.retry_backoff_unit)
-
-        retry_layout.addRow("Backoff:", backoff_layout)
-
-        layout.addWidget(retry_group)
 
         # Proxy Settings
         proxy_group = QGroupBox("Proxy")
@@ -291,23 +315,61 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(proxy_group)
 
-        # Spacer
         layout.addStretch()
-        
-        # Buttons
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-        
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.clicked.connect(self.reject)
-        button_layout.addWidget(cancel_btn)
-        
-        save_btn = QPushButton("Save")
-        save_btn.setObjectName("primaryButton")
-        save_btn.clicked.connect(self._on_save_click)
-        button_layout.addWidget(save_btn)
-        
-        layout.addLayout(button_layout)
+
+        self.tab_widget.addTab(tab, "Network")
+
+    def _create_advanced_tab(self):
+        """Create Advanced settings tab"""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setSpacing(15)
+        layout.setContentsMargins(15, 15, 15, 15)
+
+        # Retry Settings
+        retry_group = QGroupBox("Auto-Retry")
+        retry_layout = QFormLayout(retry_group)
+
+        self.enable_retry_cb = QCheckBox("Enable auto-retry on failure")
+        retry_layout.addRow(self.enable_retry_cb)
+
+        # Max retries - using custom SpinBox
+        self.max_retries_spin = StyledSpinBox(min_val=0, max_val=10, value=3)
+        self.max_retries_spin.setToolTip("Number of times to retry a failed download (0 = no retry)")
+        retry_layout.addRow("Max Retries:", self.max_retries_spin)
+
+        # Retry delay input
+        retry_delay_layout = QHBoxLayout()
+        self.retry_delay_input = QLineEdit()
+        self.retry_delay_input.setText("5")
+        retry_delay_layout.addWidget(self.retry_delay_input)
+
+        self.retry_delay_unit = QLabel("seconds")
+        retry_delay_layout.addWidget(self.retry_delay_unit)
+
+        self.retry_delay_hint = QLabel("(before first retry)")
+        self.retry_delay_hint.setStyleSheet("color: #888; font-size: 11px;")
+        retry_delay_layout.addWidget(self.retry_delay_hint)
+
+        retry_layout.addRow("Retry Delay:", retry_delay_layout)
+
+        # Retry backoff input
+        backoff_layout = QHBoxLayout()
+        self.retry_backoff_input = QLineEdit()
+        self.retry_backoff_input.setText("2")
+        backoff_layout.addWidget(self.retry_backoff_input)
+
+        self.retry_backoff_unit = QLabel("x (multiplier)")
+        self.retry_backoff_unit.setStyleSheet("color: #888; font-size: 11px;")
+        backoff_layout.addWidget(self.retry_backoff_unit)
+
+        retry_layout.addRow("Backoff:", backoff_layout)
+
+        layout.addWidget(retry_group)
+
+        layout.addStretch()
+
+        self.tab_widget.addTab(tab, "Advanced")
     
     def _browse_folder(self):
         """Open folder browser dialog"""
