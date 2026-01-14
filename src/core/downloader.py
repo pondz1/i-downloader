@@ -40,13 +40,15 @@ class DownloadManager:
         max_concurrent: int = DEFAULT_MAX_CONCURRENT,
         default_segments: int = DEFAULT_SEGMENTS,
         progress_callback: Optional[Callable[[Download], None]] = None,
-        status_callback: Optional[Callable[[Download], None]] = None
+        status_callback: Optional[Callable[[Download], None]] = None,
+        rate_limit: Optional[float] = None  # bytes per second (None = unlimited)
     ):
         self.max_concurrent = max_concurrent
         self.default_segments = default_segments
         self.progress_callback = progress_callback
         self.status_callback = status_callback
-        
+        self.rate_limit = rate_limit
+
         self.downloads: Dict[str, Download] = {}
         self.active_tasks: Dict[str, asyncio.Task] = {}
         self.segment_downloaders: Dict[str, List[SegmentDownloader]] = {}
@@ -255,7 +257,8 @@ class DownloadManager:
                     url=download.url,
                     segment=segment,
                     session=self._session,
-                    progress_callback=progress_callback
+                    progress_callback=progress_callback,
+                    rate_limit=self.rate_limit
                 )
                 for segment in download.segments
                 if not segment.completed

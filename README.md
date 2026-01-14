@@ -45,11 +45,11 @@ python main.py
 
 ### 🎯 High Priority
 
-- [ ] **Watch Clipboard** - Auto-detect copied URLs and prompt to download
-- [ ] **Download Categories** - Auto-organize files by type (Videos, Images, Documents, etc.)
-- [ ] **Download Scheduler** - Schedule downloads for specific times
-- [ ] **Bandwidth Limiter** - Limit download speed to preserve bandwidth
-- [ ] **Batch URL Import** - Import multiple URLs from text or file
+- [x] **Watch Clipboard** - Auto-detect copied URLs and prompt to download
+- [x] **Download Categories** - Auto-organize files by type (Videos, Images, Documents, etc.)
+- [x] **Download Scheduler** - Schedule downloads for specific times
+- [x] **Bandwidth Limiter** - Limit download speed to preserve bandwidth
+- [x] **Batch URL Import** - Import multiple URLs from text or file
 
 ### 🔧 Medium Priority
 

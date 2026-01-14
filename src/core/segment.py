@@ -5,6 +5,7 @@ Segment downloader - handles downloading a single segment of a file
 import asyncio
 import aiohttp
 import aiofiles
+import time
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -14,24 +15,27 @@ from ..models.download import SegmentInfo
 
 class SegmentDownloader:
     """Downloads a single segment of a file using HTTP Range requests"""
-    
+
     def __init__(
         self,
         url: str,
         segment: SegmentInfo,
         session: aiohttp.ClientSession,
         progress_callback: Optional[Callable[[int, int], None]] = None,
-        chunk_size: int = DEFAULT_CHUNK_SIZE
+        chunk_size: int = DEFAULT_CHUNK_SIZE,
+        rate_limit: Optional[float] = None  # bytes per second
     ):
         self.url = url
         self.segment = segment
         self.session = session
         self.progress_callback = progress_callback
         self.chunk_size = chunk_size
+        self.rate_limit = rate_limit  # Rate limit in bytes per second
         self._cancelled = False
         self._paused = False
         self._pause_event = asyncio.Event()
         self._pause_event.set()  # Not paused initially
+        self._last_chunk_time = None
     
     async def download(self) -> bool:
         """
@@ -68,14 +72,28 @@ class SegmentDownloader:
                     async for chunk in response.content.iter_chunked(self.chunk_size):
                         # Check for pause
                         await self._pause_event.wait()
-                        
+
                         # Check for cancellation
                         if self._cancelled:
                             return False
-                        
+
+                        # Apply rate limiting if set
+                        if self.rate_limit and self.rate_limit > 0:
+                            chunk_time = time.time()
+                            if self._last_chunk_time is not None:
+                                elapsed = chunk_time - self._last_chunk_time
+                                # Calculate expected time for this chunk at the rate limit
+                                expected_time = len(chunk) / self.rate_limit
+                                if elapsed < expected_time:
+                                    # Sleep to respect rate limit
+                                    await asyncio.sleep(expected_time - elapsed)
+                            self._last_chunk_time = time.time()
+                        else:
+                            self._last_chunk_time = time.time()
+
                         await f.write(chunk)
                         self.segment.downloaded += len(chunk)
-                        
+
                         if self.progress_callback:
                             self.progress_callback(self.segment.index, len(chunk))
             

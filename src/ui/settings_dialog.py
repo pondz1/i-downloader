@@ -5,7 +5,7 @@ Settings dialog - application settings
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QFileDialog, QSpinBox, QGroupBox, QFormLayout,
-    QLineEdit, QCheckBox, QWidget
+    QLineEdit, QCheckBox, QWidget, QComboBox
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
@@ -153,7 +153,36 @@ class SettingsDialog(QDialog):
         download_layout.addRow("Max Concurrent Downloads:", self.concurrent_spin)
         
         layout.addWidget(download_group)
-        
+
+        # Bandwidth Settings
+        bandwidth_group = QGroupBox("Bandwidth")
+        bandwidth_layout = QFormLayout(bandwidth_group)
+
+        self.limit_speed_cb = QCheckBox("Limit download speed")
+        self.limit_speed_cb.toggled.connect(self._on_limit_speed_toggled)
+        bandwidth_layout.addRow(self.limit_speed_cb)
+
+        # Speed limit input
+        speed_limit_layout = QHBoxLayout()
+        self.speed_limit_input = QLineEdit()
+        self.speed_limit_input.setText("0")
+        self.speed_limit_input.setEnabled(False)
+        speed_limit_layout.addWidget(self.speed_limit_input)
+
+        self.speed_limit_unit = QComboBox()
+        self.speed_limit_unit.addItem("KB/s", 1024)
+        self.speed_limit_unit.addItem("MB/s", 1024 * 1024)
+        self.speed_limit_unit.setEnabled(False)
+        speed_limit_layout.addWidget(self.speed_limit_unit)
+
+        self.speed_limit_unlimited = QLabel("(0 = unlimited)")
+        self.speed_limit_unlimited.setStyleSheet("color: #888; font-size: 11px;")
+        speed_limit_layout.addWidget(self.speed_limit_unlimited)
+
+        bandwidth_layout.addRow("Speed Limit:", speed_limit_layout)
+
+        layout.addWidget(bandwidth_group)
+
         # Behavior Settings
         behavior_group = QGroupBox("Behavior")
         behavior_layout = QFormLayout(behavior_group)
@@ -171,7 +200,10 @@ class SettingsDialog(QDialog):
         self.auto_start_cb = QCheckBox("Start downloads automatically when added")
         self.auto_start_cb.setChecked(True)
         behavior_layout.addRow(self.auto_start_cb)
-        
+
+        self.watch_clipboard_cb = QCheckBox("Watch clipboard for download URLs")
+        behavior_layout.addRow(self.watch_clipboard_cb)
+
         layout.addWidget(behavior_group)
         
         # Spacer
@@ -201,6 +233,11 @@ class SettingsDialog(QDialog):
         )
         if folder:
             self.download_dir_input.setText(folder)
+
+    def _on_limit_speed_toggled(self, checked: bool):
+        """Handle limit speed checkbox toggle"""
+        self.speed_limit_input.setEnabled(checked)
+        self.speed_limit_unit.setEnabled(checked)
     
     def _load_settings(self):
         """Load settings into UI"""
@@ -213,6 +250,22 @@ class SettingsDialog(QDialog):
         self.concurrent_spin.setValue(
             self._settings.get('max_concurrent', DEFAULT_MAX_CONCURRENT)
         )
+
+        # Load bandwidth limit settings
+        rate_limit = self._settings.get('rate_limit', 0)  # 0 = unlimited
+        if rate_limit > 0:
+            self.limit_speed_cb.setChecked(True)
+            # Determine unit (KB or MB)
+            if rate_limit >= 1024 * 1024:
+                self.speed_limit_unit.setCurrentIndex(1)  # MB/s
+                self.speed_limit_input.setText(str(rate_limit // (1024 * 1024)))
+            else:
+                self.speed_limit_unit.setCurrentIndex(0)  # KB/s
+                self.speed_limit_input.setText(str(rate_limit // 1024))
+        else:
+            self.limit_speed_cb.setChecked(False)
+            self.speed_limit_input.setText("0")
+
         self.start_minimized_cb.setChecked(
             self._settings.get('start_minimized', False)
         )
@@ -225,19 +278,35 @@ class SettingsDialog(QDialog):
         self.auto_start_cb.setChecked(
             self._settings.get('auto_start', True)
         )
-    
+        self.watch_clipboard_cb.setChecked(
+            self._settings.get('watch_clipboard', False)
+        )
+
     def _on_save_click(self):
         """Handle save button click"""
+        # Calculate rate limit in bytes per second
+        if self.limit_speed_cb.isChecked():
+            try:
+                value = float(self.speed_limit_input.text())
+                unit_multiplier = self.speed_limit_unit.currentData()
+                rate_limit = int(value * unit_multiplier)
+            except ValueError:
+                rate_limit = 0
+        else:
+            rate_limit = 0
+
         settings = {
             'download_dir': self.download_dir_input.text(),
             'default_segments': self.segments_spin.value(),
             'max_concurrent': self.concurrent_spin.value(),
+            'rate_limit': rate_limit,
             'start_minimized': self.start_minimized_cb.isChecked(),
             'close_to_tray': self.close_to_tray_cb.isChecked(),
             'notify_complete': self.notify_complete_cb.isChecked(),
-            'auto_start': self.auto_start_cb.isChecked()
+            'auto_start': self.auto_start_cb.isChecked(),
+            'watch_clipboard': self.watch_clipboard_cb.isChecked()
         }
-        
+
         self.settings_changed.emit(settings)
         self.accept()
     
@@ -250,5 +319,6 @@ class SettingsDialog(QDialog):
             'start_minimized': self.start_minimized_cb.isChecked(),
             'close_to_tray': self.close_to_tray_cb.isChecked(),
             'notify_complete': self.notify_complete_cb.isChecked(),
-            'auto_start': self.auto_start_cb.isChecked()
+            'auto_start': self.auto_start_cb.isChecked(),
+            'watch_clipboard': self.watch_clipboard_cb.isChecked()
         }

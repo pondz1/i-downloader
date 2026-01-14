@@ -27,7 +27,10 @@ from .styles import DARK_THEME
 from .download_item import DownloadItemWidget
 from .download_dialog import DownloadDialog
 from .settings_dialog import SettingsDialog
+from .clipboard_monitor import ClipboardMonitor
+from .batch_dialog import BatchImportDialog
 from ..core.downloader import DownloadManager
+from ..core.scheduler import DownloadScheduler
 from ..models.download import Download
 from ..utils.constants import (
     APP_NAME, APP_VERSION, APP_DATA_DIR, 
@@ -56,10 +59,17 @@ class MainWindow(QMainWindow):
         # Download manager
         self._download_manager: Optional[DownloadManager] = None
         self._download_widgets: Dict[str, DownloadItemWidget] = {}
-        
+
         # Async event loop
         self._loop: Optional[asyncio.AbstractEventLoop] = None
-        
+
+        # Clipboard monitor
+        self._clipboard_monitor = None
+        self._clipboard_dialog_shown = False
+
+        # Scheduler
+        self._scheduler: Optional[DownloadScheduler] = None
+
         # Setup UI
         self._setup_window()
         self._setup_toolbar()
@@ -104,7 +114,14 @@ class MainWindow(QMainWindow):
             self.add_btn.setIcon(qta.icon('fa5s.plus', color='#eaeaea'))
         self.add_btn.clicked.connect(self._on_add_download)
         toolbar.addWidget(self.add_btn)
-        
+
+        # Batch import button
+        self.batch_btn = QPushButton(" Batch Import")
+        if HAS_QTAWESOME:
+            self.batch_btn.setIcon(qta.icon('fa5s.list', color='#eaeaea'))
+        self.batch_btn.clicked.connect(self._on_batch_import)
+        toolbar.addWidget(self.batch_btn)
+
         toolbar.addSeparator()
         
         # Resume all button
@@ -231,25 +248,38 @@ class MainWindow(QMainWindow):
     async def initialize(self):
         """Initialize async components"""
         self._loop = asyncio.get_event_loop()
-        
+
         # Initialize download manager
+        rate_limit = self._settings.get('rate_limit', 0)
         self._download_manager = DownloadManager(
             max_concurrent=self._settings.get('max_concurrent', DEFAULT_MAX_CONCURRENT),
             default_segments=self._settings.get('default_segments', DEFAULT_SEGMENTS),
             progress_callback=self._on_download_progress,
-            status_callback=self._on_download_status_changed
+            status_callback=self._on_download_status_changed,
+            rate_limit=rate_limit if rate_limit > 0 else None
         )
         await self._download_manager.initialize()
-        
+
+        # Initialize scheduler
+        self._scheduler = DownloadScheduler(self._start_scheduled_download)
+        await self._scheduler.start()
+
+        # Initialize clipboard monitor
+        self._clipboard_monitor = ClipboardMonitor(self)
+        self._clipboard_monitor.url_detected.connect(self._on_url_detected)
+        self._clipboard_monitor.set_enabled(self._settings.get('watch_clipboard', False))
+
         # Load existing downloads into UI
         for download in self._download_manager.get_all_downloads():
             self._add_download_widget(download)
-        
+
         self._update_empty_state()
         self._update_stats()
     
     async def shutdown(self):
         """Shutdown async components"""
+        if self._scheduler:
+            await self._scheduler.stop()
         if self._download_manager:
             await self._download_manager.shutdown()
     
@@ -258,27 +288,91 @@ class MainWindow(QMainWindow):
         dialog = DownloadDialog(self)
         dialog.download_requested.connect(self._start_new_download)
         dialog.exec()
-    
-    def _start_new_download(self, url: str, save_dir: str, num_segments: int):
+
+    def _on_batch_import(self):
+        """Handle batch import button click"""
+        dialog = BatchImportDialog(self)
+        dialog.downloads_requested.connect(self._start_batch_downloads)
+        dialog.exec()
+
+    def _start_batch_downloads(self, downloads: list):
+        """Start multiple downloads from batch import"""
+        for url, save_dir, num_segments, category in downloads:
+            QTimer.singleShot(0, lambda u=url, d=save_dir, s=num_segments, c=category:
+                self._start_new_download(u, d, s, c))
+
+    def _start_scheduled_download(self, url: str, save_dir: str, num_segments: int, category: str = "all"):
+        """Callback for starting a scheduled download"""
+        QTimer.singleShot(0, lambda: self._start_new_download(url, save_dir, num_segments, category))
+
+    def _on_url_detected(self, url: str):
+        """Handle URL detected in clipboard"""
+        # Prevent showing multiple dialogs in quick succession
+        if self._clipboard_dialog_shown:
+            return
+
+        self._clipboard_dialog_shown = True
+
+        reply = QMessageBox.question(
+            self,
+            "URL Detected in Clipboard",
+            f"A URL was detected in your clipboard:\n\n{url}\n\nDo you want to download it?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            # Show download dialog with the URL
+            dialog = DownloadDialog(self, url=url)
+            dialog.download_requested.connect(self._start_new_download)
+            dialog.exec()
+
+        self._clipboard_dialog_shown = False
+
+    def _start_new_download(self, url: str, save_dir: str, num_segments: int, category: str = "all", scheduled_time=None):
         """Start a new download"""
-        if self._loop and self._download_manager:
+        if scheduled_time and self._scheduler:
+            # Schedule the download
+            self._scheduler.schedule_download(url, save_dir, num_segments, scheduled_time, category)
+            QMessageBox.information(
+                self,
+                "Download Scheduled",
+                f"Download has been scheduled for:\n{scheduled_time.strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+        elif self._loop and self._download_manager:
             asyncio.run_coroutine_threadsafe(
-                self._add_and_start_download(url, save_dir, num_segments),
+                self._add_and_start_download(url, save_dir, num_segments, category),
                 self._loop
             )
     
-    async def _add_and_start_download(self, url: str, save_dir: str, num_segments: int):
+    async def _add_and_start_download(self, url: str, save_dir: str, num_segments: int, category: str = "all"):
         """Add and start a download (async)"""
         try:
+            import os
+            from ..utils.categories import get_category_from_filename, get_category_save_path
+
+            # Ensure save directory exists
+            os.makedirs(save_dir, exist_ok=True)
+
             download = await self._download_manager.add_download(
                 url=url,
                 save_dir=save_dir,
                 num_segments=num_segments
             )
-            
+
+            # Handle auto category detection
+            if category == "auto":
+                detected_category = get_category_from_filename(download.filename)
+
+                # Update save path if category detected and not "all"
+                if detected_category != "all":
+                    new_save_dir = get_category_save_path(save_dir, detected_category)
+                    if new_save_dir != save_dir:
+                        os.makedirs(new_save_dir, exist_ok=True)
+                        download.save_path = os.path.join(new_save_dir, download.filename)
+
             # Add widget on main thread
             QTimer.singleShot(0, lambda: self._add_download_widget(download))
-            
+
             # Start if auto-start is enabled
             if self._settings.get('auto_start', True):
                 await self._download_manager.start_download(download.id)
@@ -469,11 +563,17 @@ class MainWindow(QMainWindow):
         """Apply new settings"""
         self._settings = settings
         self._save_settings()
-        
+
         # Apply to download manager
         if self._download_manager:
             self._download_manager.max_concurrent = settings.get('max_concurrent', DEFAULT_MAX_CONCURRENT)
             self._download_manager.default_segments = settings.get('default_segments', DEFAULT_SEGMENTS)
+            rate_limit = settings.get('rate_limit', 0)
+            self._download_manager.rate_limit = rate_limit if rate_limit > 0 else None
+
+        # Apply to clipboard monitor
+        if self._clipboard_monitor:
+            self._clipboard_monitor.set_enabled(settings.get('watch_clipboard', False))
     
     def _load_settings(self) -> dict:
         """Load settings from file"""
