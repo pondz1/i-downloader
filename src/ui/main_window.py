@@ -6,6 +6,8 @@ import os
 import sys
 import asyncio
 import json
+import platform
+import subprocess
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -45,6 +47,22 @@ def get_icon(icon_name: str, color: str = '#eaeaea'):
     if HAS_QTAWESOME:
         return qta.icon(icon_name, color=color)
     return None
+
+
+def open_path(path: str):
+    """
+    Open a file or folder using the system's default application.
+    Cross-platform implementation supporting Windows, macOS, and Linux.
+    """
+    try:
+        if platform.system() == 'Windows':
+            os.startfile(path)
+        elif platform.system() == 'Darwin':  # macOS
+            subprocess.run(['open', path], check=True)
+        else:  # Linux and others
+            subprocess.run(['xdg-open', path], check=True)
+    except Exception as e:
+        print(f"Failed to open {path}: {e}")
 
 
 class MainWindow(QMainWindow):
@@ -507,8 +525,8 @@ class MainWindow(QMainWindow):
         if self._download_manager:
             download = self._download_manager.get_download(download_id)
             if download and os.path.exists(download.save_path):
-                os.startfile(download.save_path)
-    
+                open_path(download.save_path)
+
     @pyqtSlot(str)
     def _on_open_folder(self, download_id: str):
         """Handle open folder"""
@@ -517,7 +535,7 @@ class MainWindow(QMainWindow):
             if download:
                 folder = os.path.dirname(download.save_path)
                 if os.path.exists(folder):
-                    os.startfile(folder)
+                    open_path(folder)
     
     def _on_resume_all(self):
         """Resume all paused downloads"""

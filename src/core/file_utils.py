@@ -3,6 +3,7 @@ File utility functions for download operations
 """
 
 import os
+import stat
 import aiofiles
 from pathlib import Path
 from typing import List
@@ -11,22 +12,39 @@ from typing import List
 async def merge_segments(segment_files: List[str], output_file: str, delete_segments: bool = True):
     """
     Merge multiple segment files into a single output file.
-    
+
     Args:
         segment_files: List of segment file paths in order
         output_file: Output file path
         delete_segments: Whether to delete segment files after merging
+
+    SECURITY: Sets restrictive file permissions (0600 - owner read/write only)
+    to prevent other users from accessing downloaded files.
     """
-    async with aiofiles.open(output_file, 'wb') as outfile:
-        for segment_file in segment_files:
-            if os.path.exists(segment_file):
-                async with aiofiles.open(segment_file, 'rb') as infile:
-                    while True:
-                        chunk = await infile.read(1024 * 1024)  # 1MB chunks
-                        if not chunk:
-                            break
-                        await outfile.write(chunk)
-    
+    # Set restrictive umask before file creation
+    old_umask = os.umask(0o077)  # Only owner has permissions
+
+    try:
+        async with aiofiles.open(output_file, 'wb') as outfile:
+            for segment_file in segment_files:
+                if os.path.exists(segment_file):
+                    async with aiofiles.open(segment_file, 'rb') as infile:
+                        while True:
+                            chunk = await infile.read(1024 * 1024)  # 1MB chunks
+                            if not chunk:
+                                break
+                            await outfile.write(chunk)
+    finally:
+        # Restore original umask
+        os.umask(old_umask)
+
+    # SECURITY: Explicitly set file permissions to 0600 (owner read/write only)
+    # This ensures downloaded files are not accessible by other users
+    try:
+        os.chmod(output_file, 0o600)
+    except Exception as e:
+        print(f"Warning: Could not set file permissions: {e}")
+
     # Delete segment files
     if delete_segments:
         for segment_file in segment_files:

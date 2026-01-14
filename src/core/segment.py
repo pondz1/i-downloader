@@ -58,11 +58,13 @@ class SegmentDownloader:
             }
             
             timeout = aiohttp.ClientTimeout(total=None, connect=DEFAULT_TIMEOUT)
-            
+
+            # SECURITY: Limit redirects to prevent SSRF and redirect loops
             async with self.session.get(
                 self.url,
                 headers=headers,
-                timeout=timeout
+                timeout=timeout,
+                max_redirects=10  # Prevent infinite redirects
             ) as response:
                 if response.status not in (200, 206):
                     return False

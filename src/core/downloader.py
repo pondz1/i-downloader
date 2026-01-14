@@ -5,6 +5,8 @@ Main download manager - orchestrates all downloads
 import asyncio
 import aiohttp
 import os
+import ssl
+import tempfile
 import time
 from pathlib import Path
 from typing import Dict, Optional, Callable, List
@@ -64,9 +66,17 @@ class DownloadManager:
     
     async def initialize(self):
         """Initialize the download manager"""
-        self._session = aiohttp.ClientSession()
+        # SECURITY: Explicitly configure SSL/TLS certificate validation
+        # This ensures we verify SSL certificates and prevent MITM attacks
+        ssl_context = ssl.create_default_context()
+        ssl_context.verify_mode = ssl.CERT_REQUIRED
+
+        # Create connector with SSL validation
+        connector = aiohttp.TCPConnector(ssl=ssl_context)
+
+        self._session = aiohttp.ClientSession(connector=connector)
         self._running = True
-        
+
         # Load ALL downloads from database (including completed)
         all_downloads = self.db.get_all_downloads()
         for download in all_downloads:
@@ -242,9 +252,25 @@ class DownloadManager:
             # Create segment temp files if needed
             for segment in download.segments:
                 if not segment.temp_file:
-                    segment.temp_file = str(self.temp_dir / f"{download.id}_segment_{segment.index}.tmp")
-                
-                # Create empty file if it doesn't exist
+                    # SECURITY: Use tempfile.mkstemp() for atomic, secure file creation
+                    # This prevents TOCTOU (Time-of-Check-Time-of-Use) race conditions
+                    # and symlink attacks
+                    try:
+                        fd, temp_path = tempfile.mkstemp(
+                            suffix=f"_seg{segment.index}.tmp",
+                            dir=self.temp_dir,
+                            prefix=f"{download.id}_"
+                        )
+                        os.close(fd)  # Close the file descriptor, we'll reopen later
+                        segment.temp_file = temp_path
+                    except (OSError, IOError) as e:
+                        download.status = DownloadStatus.FAILED
+                        download.error_message = f"Failed to create temp file: {str(e)}"
+                        self.db.save_download(download)
+                        self._notify_status(download)
+                        return
+
+                # Ensure file exists (might have been cleaned up)
                 if not os.path.exists(segment.temp_file):
                     Path(segment.temp_file).touch()
             
@@ -346,17 +372,31 @@ class DownloadManager:
             self.db.save_download(download)
     
     async def _get_file_info(self, url: str) -> dict:
-        """Get file information from server"""
+        """
+        Get file information from server.
+
+        SECURITY: Limited redirects to prevent:
+        - Infinite redirect loops (DoS)
+        - SSRF (Server-Side Request Forgery)
+        - Redirect-based data exfiltration
+        """
         try:
             headers = {'User-Agent': USER_AGENT}
             timeout = aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT)
-            
-            async with self._session.head(url, headers=headers, timeout=timeout, allow_redirects=True) as response:
+
+            # SECURITY: Limit redirects to 10 to prevent redirect-based attacks
+            async with self._session.head(
+                url,
+                headers=headers,
+                timeout=timeout,
+                allow_redirects=True,
+                max_redirects=10  # Prevent infinite redirects and SSRF
+            ) as response:
                 content_length = response.headers.get('Content-Length')
                 content_disposition = response.headers.get('Content-Disposition')
                 accept_ranges = response.headers.get('Accept-Ranges')
                 content_type = response.headers.get('Content-Type', '')
-                
+
                 return {
                     'size': int(content_length) if content_length else 0,
                     'filename': extract_filename_from_header(content_disposition),

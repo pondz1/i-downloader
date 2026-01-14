@@ -64,21 +64,49 @@ def extract_filename_from_url(url: str) -> str:
 
 
 def extract_filename_from_header(content_disposition: str) -> Optional[str]:
-    """Extract filename from Content-Disposition header"""
+    """
+    Extract filename from Content-Disposition header with security hardening.
+
+    This function properly sanitizes the filename to prevent:
+    - Path traversal attacks (../../etc/passwd)
+    - Arbitrary file write vulnerabilities
+    """
     if not content_disposition:
         return None
-    
+
+    filename = None
+
     # Try to find filename*= (RFC 5987)
     match = re.search(r"filename\*=(?:UTF-8'')?([^;]+)", content_disposition, re.IGNORECASE)
     if match:
-        return unquote(match.group(1).strip('"'))
-    
+        filename = unquote(match.group(1).strip('"'))
+
     # Try to find filename=
-    match = re.search(r'filename[^;=\n]*=(["\']?)([^"\';]+)\1', content_disposition)
-    if match:
-        return match.group(2).strip()
-    
-    return None
+    if not filename:
+        match = re.search(r'filename[^;=\n]*=(["\']?)([^"\';]+)\1', content_disposition)
+        if match:
+            filename = match.group(2).strip()
+
+    if not filename:
+        return None
+
+    # SECURITY: Remove any path components to prevent path traversal
+    # This strips "../../" or any directory navigation
+    filename = os.path.basename(filename)
+
+    # SECURITY: Sanitize the filename to remove dangerous characters
+    filename = sanitize_filename(filename)
+
+    # Ensure filename is not empty after sanitization
+    if not filename:
+        return None
+
+    # Limit filename length to prevent DoS
+    if len(filename) > 255:
+        name, ext = os.path.splitext(filename)
+        filename = name[:255-len(ext)] + ext
+
+    return filename
 
 
 def get_unique_filename(directory: str, filename: str) -> str:
