@@ -7,7 +7,7 @@ from typing import Dict, Any
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QTableWidget, QTableWidgetItem, QHeaderView,
-    QLineEdit, QWidget, QMessageBox, QComboBox
+    QLineEdit, QWidget, QMessageBox, QComboBox, QCheckBox
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QThread, QTimer
 from PyQt6.QtGui import QPixmap, QFont
@@ -88,7 +88,7 @@ class VideoFormatDialog(QDialog):
     Shows video thumbnail, title, and available formats in a table.
     """
 
-    format_selected = pyqtSignal(str, dict)  # format_id, video_info
+    format_selected = pyqtSignal(list, dict)  # format_ids list, video_info
 
     def __init__(self, url: str, parent=None):
         super().__init__(parent)
@@ -168,7 +168,7 @@ class VideoFormatDialog(QDialog):
         self.formats_table = QTableWidget()
         self.formats_table.setColumnCount(5)
         self.formats_table.setHorizontalHeaderLabels([
-            "Quality", "Format", "Size", "Codec", "Select"
+            "Download", "Quality", "Format", "Size", "Codec"
         ])
 
         # Style the table
@@ -247,6 +247,9 @@ class VideoFormatDialog(QDialog):
         self.video_info = info
         self.loading_label.setVisible(False)
         self.formats_table.setVisible(True)
+
+        # Enable the download button now that formats are loaded
+        self.select_btn.setEnabled(True)
 
         # Update video details
         self.title_label.setText(info.get('title', 'Unknown'))
@@ -362,7 +365,7 @@ class VideoFormatDialog(QDialog):
         # Add audio-only option
         self.formats_table.insertRow(1)
         self._add_format_row(1, {
-            'format_id': 'bestaudio',
+            'format_id': 'bestaudio/best',  # Use format string for audio-only
             'quality': 'Audio Only',
             'ext': 'm4a',
             'filesize': 0,
@@ -379,15 +382,31 @@ class VideoFormatDialog(QDialog):
 
     def _add_format_row(self, row: int, fmt: dict, is_best: bool = False, is_audio: bool = False):
         """Add a format row to the table"""
+        # Checkbox for download
+        checkbox = QWidget()
+        checkbox_layout = QHBoxLayout(checkbox)
+        checkbox_layout.setContentsMargins(0, 0, 0, 0)
+        checkbox_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        chk = QCheckBox()
+        chk.setProperty("format_id", fmt.get('format_id', 'best'))
+        if is_best:
+            chk.setChecked(True)  # Default check best quality
+            chk.setToolTip("Best quality video + audio")
+        elif is_audio:
+            chk.setToolTip("Audio only (no video)")
+        checkbox_layout.addWidget(chk)
+        self.formats_table.setCellWidget(row, 0, checkbox)
+
         # Quality
         quality_item = QTableWidgetItem(fmt.get('quality', 'Unknown'))
         if is_best:
             quality_item.setForeground(Qt.GlobalColor.cyan)
-        self.formats_table.setItem(row, 0, quality_item)
+        self.formats_table.setItem(row, 1, quality_item)
 
         # Format (extension)
         format_item = QTableWidgetItem(fmt.get('ext', 'mp4').upper())
-        self.formats_table.setItem(row, 1, format_item)
+        self.formats_table.setItem(row, 2, format_item)
 
         # Size
         filesize = fmt.get('filesize', 0)
@@ -397,7 +416,7 @@ class VideoFormatDialog(QDialog):
         else:
             size_str = "Unknown"
         size_item = QTableWidgetItem(size_str)
-        self.formats_table.setItem(row, 2, size_item)
+        self.formats_table.setItem(row, 3, size_item)
 
         # Codec
         vcodec = fmt.get('vcodec', 'unknown')
@@ -409,23 +428,11 @@ class VideoFormatDialog(QDialog):
         else:
             codec_str = f"{vcodec} / {acodec}"
         codec_item = QTableWidgetItem(codec_str)
-        self.formats_table.setItem(row, 3, codec_item)
-
-        # Select button
-        select_btn = QPushButton("Select")
-        select_btn.setProperty("format_id", fmt.get('format_id', 'best'))
-        select_btn.clicked.connect(lambda: self._on_format_selected(fmt.get('format_id', 'best')))
-        self.formats_table.setCellWidget(row, 4, select_btn)
+        self.formats_table.setItem(row, 4, codec_item)
 
     def _on_format_selected(self, format_id: str):
-        """Handle format selection"""
-        self.select_btn.setEnabled(True)
-        # Highlight selected row
-        for row in range(self.formats_table.rowCount()):
-            btn = self.formats_table.cellWidget(row, 4)
-            if btn and btn.property("format_id") == format_id:
-                self.formats_table.selectRow(row)
-                break
+        """Handle format selection (deprecated - now uses checkboxes)"""
+        pass
 
     def _on_filter_changed(self, index: int):
         """Handle quality filter change"""
@@ -458,27 +465,39 @@ class VideoFormatDialog(QDialog):
 
     def _on_select_format(self):
         """Handle download button click"""
-        # Find selected format
-        selected_rows = self.formats_table.selectionModel().selectedRows()
-        if not selected_rows:
-            QMessageBox.warning(self, "No Selection", "Please select a format first.")
+        # Collect all checked formats
+        selected_formats = []
+
+        for row in range(self.formats_table.rowCount()):
+            checkbox_widget = self.formats_table.cellWidget(row, 0)
+            if checkbox_widget:
+                chk = checkbox_widget.findChild(QCheckBox)
+                if chk and chk.isChecked():
+                    format_id = chk.property("format_id")
+                    if format_id:
+                        selected_formats.append(format_id)
+
+        if not selected_formats:
+            QMessageBox.warning(self, "No Selection", "Please select at least one format to download.")
             return
 
-        row = selected_rows[0].row()
-        btn = self.formats_table.cellWidget(row, 4)
-        if btn:
-            format_id = btn.property("format_id")
-            self.format_selected.emit(format_id, self.video_info)
-            self.accept()
+        self.format_selected.emit(selected_formats, self.video_info)
+        self.accept()
 
-    def get_selected_format(self) -> tuple[str, Dict[str, Any]]:
-        """Get selected format ID and video info"""
-        # Find selected format
+    def get_selected_formats(self) -> tuple[list, Dict[str, Any]]:
+        """Get selected format IDs and video info"""
+        selected_formats = []
+
         for row in range(self.formats_table.rowCount()):
-            btn = self.formats_table.cellWidget(row, 4)
-            if btn:
-                return btn.property("format_id"), self.video_info
-        return 'best', self.video_info
+            checkbox_widget = self.formats_table.cellWidget(row, 0)
+            if checkbox_widget:
+                chk = checkbox_widget.findChild(QCheckBox)
+                if chk and chk.isChecked():
+                    format_id = chk.property("format_id")
+                    if format_id:
+                        selected_formats.append(format_id)
+
+        return selected_formats if selected_formats else ['best'], self.video_info
 
     def closeEvent(self, event):
         """Clean up on close"""

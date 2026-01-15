@@ -235,10 +235,46 @@ class VideoDownloader:
                 'overwrites': True,  # Overwrite if file exists
             }
 
+            # Add post-processing for audio-only downloads
+            if format_id.startswith('bestaudio') or 'audio' in format_id:
+                ydl_opts.update({
+                    'postprocessors': [{
+                        'key': 'FFmpegExtractAudio',
+                        'preferredcodec': 'm4a',
+                        'preferredquality': '192',
+                    }],
+                    'prefer_ffmpeg': True,
+                })
+
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 try:
                     info = ydl.extract_info(url, download=True)
-                    filepath = ydl.prepare_filename(info)
+
+                    # Get the final filepath (may be different after post-processing)
+                    # For audio downloads, yt-dlp creates a temporary file then converts it
+                    # We need to find the actual final file
+                    temp_filepath = ydl.prepare_filename(info)
+
+                    # Check if this is an audio download with post-processing
+                    is_audio_download = format_id.startswith('bestaudio') or 'audio' in format_id
+
+                    if is_audio_download:
+                        # For audio downloads, the final file may have different extension
+                        # Search for the actual file in the save directory
+                        save_path_obj = Path(save_path)
+
+                        # Get all files in the save directory
+                        try:
+                            all_files = [f for f in save_path_obj.iterdir() if f.is_file()]
+                            if all_files:
+                                # Use the most recently modified file
+                                filepath = str(max(all_files, key=lambda p: p.stat().st_mtime))
+                            else:
+                                filepath = temp_filepath
+                        except Exception:
+                            filepath = temp_filepath
+                    else:
+                        filepath = temp_filepath
 
                     return {
                         'success': True,

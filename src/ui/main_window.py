@@ -421,20 +421,21 @@ class MainWindow(QMainWindow):
 
         # Show format selection dialog
         dialog = VideoFormatDialog(url, self)
-        dialog.format_selected.connect(lambda format_id, video_info: self._start_video_download(url, save_dir, format_id, category))
+        dialog.format_selected.connect(lambda format_ids, video_info: self._start_video_download(url, save_dir, format_ids, category))
         result = dialog.exec()
 
         if result != QDialog.DialogCode.Accepted:
             # User cancelled
             pass
 
-    def _start_video_download(self, url: str, save_dir: str, format_id: str, category: str):
-        """Start a video download with selected format"""
+    def _start_video_download(self, url: str, save_dir: str, format_ids: list, category: str):
+        """Start video downloads with selected format(s)"""
         if self._loop and self._download_manager:
-            asyncio.run_coroutine_threadsafe(
-                self._add_and_start_video_download(url, save_dir, format_id, category),
-                self._loop
-            )
+            for format_id in format_ids:
+                asyncio.run_coroutine_threadsafe(
+                    self._add_and_start_video_download(url, save_dir, format_id, category),
+                    self._loop
+                )
 
     async def _add_and_start_video_download(self, url: str, save_dir: str, format_id: str, category: str):
         """Add and start a video download (async)"""
@@ -533,6 +534,8 @@ class MainWindow(QMainWindow):
                 # Update actual filepath if different
                 if result.get('filepath'):
                     download.save_path = result['filepath']
+                    # Also update filename to match actual file
+                    download.filename = os.path.basename(result['filepath'])
 
                 # Notify status change
                 self._download_manager._notify_status(download)
