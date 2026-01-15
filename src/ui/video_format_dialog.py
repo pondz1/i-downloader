@@ -3,6 +3,7 @@ Video format selection dialog
 """
 
 import asyncio
+import shutil
 from typing import Dict, Any
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
@@ -17,6 +18,11 @@ try:
     HAS_QTAWESOME = True
 except ImportError:
     HAS_QTAWESOME = False
+
+
+def check_ffmpeg_available() -> bool:
+    """Check if FFmpeg is available on the system"""
+    return shutil.which('ffmpeg') is not None
 
 
 class VideoInfoFetcher(QThread):
@@ -163,6 +169,26 @@ class VideoFormatDialog(QDialog):
 
         filter_layout.addStretch()
         layout.addLayout(filter_layout)
+
+        # FFmpeg status indicator
+        self.ffmpeg_status_label = QLabel()
+        self.ffmpeg_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.ffmpeg_status_label.setStyleSheet("padding: 8px; border-radius: 4px;")
+
+        if check_ffmpeg_available():
+            self.ffmpeg_status_label.setText("✓ FFmpeg installed - Audio downloads available")
+            self.ffmpeg_status_label.setStyleSheet(
+                "color: #4cc9f0; background-color: rgba(76, 201, 240, 0.1); "
+                "padding: 8px; border-radius: 4px; font-size: 12px;"
+            )
+        else:
+            self.ffmpeg_status_label.setText("⚠ FFmpeg not installed - Audio downloads unavailable")
+            self.ffmpeg_status_label.setStyleSheet(
+                "color: #e63946; background-color: rgba(230, 57, 70, 0.1); "
+                "padding: 8px; border-radius: 4px; font-size: 12px;"
+            )
+
+        layout.addWidget(self.ffmpeg_status_label)
 
         # Formats table
         self.formats_table = QTableWidget()
@@ -390,11 +416,15 @@ class VideoFormatDialog(QDialog):
 
         chk = QCheckBox()
         chk.setProperty("format_id", fmt.get('format_id', 'best'))
+        chk.setProperty("is_audio", is_audio)  # Mark audio formats
         if is_best:
             chk.setChecked(True)  # Default check best quality
             chk.setToolTip("Best quality video + audio")
         elif is_audio:
-            chk.setToolTip("Audio only (no video)")
+            chk.setToolTip("Audio only (no video)\nNote: Requires FFmpeg to be installed")
+            # Disable audio checkbox if FFmpeg not available
+            if not check_ffmpeg_available():
+                chk.setEnabled(False)
         checkbox_layout.addWidget(chk)
         self.formats_table.setCellWidget(row, 0, checkbox)
 
@@ -467,6 +497,7 @@ class VideoFormatDialog(QDialog):
         """Handle download button click"""
         # Collect all checked formats
         selected_formats = []
+        has_audio_format = False
 
         for row in range(self.formats_table.rowCount()):
             checkbox_widget = self.formats_table.cellWidget(row, 0)
@@ -474,11 +505,28 @@ class VideoFormatDialog(QDialog):
                 chk = checkbox_widget.findChild(QCheckBox)
                 if chk and chk.isChecked():
                     format_id = chk.property("format_id")
+                    is_audio = chk.property("is_audio")
                     if format_id:
                         selected_formats.append(format_id)
+                        if is_audio:
+                            has_audio_format = True
 
         if not selected_formats:
             QMessageBox.warning(self, "No Selection", "Please select at least one format to download.")
+            return
+
+        # Prevent audio downloads if FFmpeg not available
+        if has_audio_format and not check_ffmpeg_available():
+            QMessageBox.critical(
+                self,
+                "FFmpeg Required",
+                "Audio-only downloads require FFmpeg to be installed.\n\n"
+                "Please install FFmpeg first:\n"
+                "• Ubuntu/Debian: sudo apt install ffmpeg\n"
+                "• macOS: brew install ffmpeg\n"
+                "• Windows: Download from https://ffmpeg.org/download.html\n\n"
+                "Then select a video format instead of audio-only."
+            )
             return
 
         self.format_selected.emit(selected_formats, self.video_info)

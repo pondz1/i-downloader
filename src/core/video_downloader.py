@@ -4,6 +4,7 @@ Video downloader using yt-dlp
 
 import asyncio
 import logging
+import shutil
 from pathlib import Path
 from typing import Dict, List, Callable, Optional, Any
 
@@ -15,6 +16,11 @@ except ImportError:
 
 
 logger = logging.getLogger(__name__)
+
+
+def check_ffmpeg_available() -> bool:
+    """Check if FFmpeg is available on the system"""
+    return shutil.which('ffmpeg') is not None
 
 
 class VideoDownloader:
@@ -198,6 +204,21 @@ class VideoDownloader:
         def _download():
             Path(save_path).mkdir(parents=True, exist_ok=True)
 
+            # Check if FFmpeg is needed and available
+            is_audio_download = format_id.startswith('bestaudio') or 'audio' in format_id
+            if is_audio_download and not check_ffmpeg_available():
+                return {
+                    'success': False,
+                    'filepath': None,
+                    'filesize': 0,
+                    'error': 'FFmpeg is not installed. Audio-only downloads require FFmpeg. '
+                           'Please install FFmpeg:\n'
+                           '  • Ubuntu/Debian: sudo apt install ffmpeg\n'
+                           '  • macOS: brew install ffmpeg\n'
+                           '  • Windows: Download from https://ffmpeg.org/download.html\n'
+                           'Or select a video format instead of audio-only.'
+                }
+
             # Progress hook variables
             progress_data = {'downloaded': 0, 'total': 0}
 
@@ -235,8 +256,8 @@ class VideoDownloader:
                 'overwrites': True,  # Overwrite if file exists
             }
 
-            # Add post-processing for audio-only downloads
-            if format_id.startswith('bestaudio') or 'audio' in format_id:
+            # Add post-processing for audio-only downloads (only if FFmpeg is available)
+            if is_audio_download and check_ffmpeg_available():
                 ydl_opts.update({
                     'postprocessors': [{
                         'key': 'FFmpegExtractAudio',
@@ -256,10 +277,11 @@ class VideoDownloader:
                     temp_filepath = ydl.prepare_filename(info)
 
                     # Check if this is an audio download with post-processing
-                    is_audio_download = format_id.startswith('bestaudio') or 'audio' in format_id
+                    # Note: is_audio_download is already defined earlier in the function
+                    # Audio downloads can only reach this point if FFmpeg is available (UI check passed)
 
                     if is_audio_download:
-                        # For audio downloads, the final file may have different extension
+                        # For audio downloads with FFmpeg, the final file may have different extension
                         # Search for the actual file in the save directory
                         save_path_obj = Path(save_path)
 

@@ -460,7 +460,14 @@ class MainWindow(QMainWindow):
                 return
 
             # Create a download object for the video
-            filename = f"{info['title']}.mp4"  # Default extension
+            # Determine the correct file extension based on format
+            is_audio = format_id.startswith('bestaudio') or 'audio' in format_id
+            if is_audio:
+                extension = 'm4a'  # Audio files are converted to m4a
+            else:
+                extension = 'mp4'  # Default video extension
+
+            filename = f"{info['title']}.{extension}"
 
             # Import Download model
             from ..models.download import Download

@@ -117,7 +117,7 @@ Route downloads through proxy servers:
 Download videos from 100+ supported sites:
 - **Supported Sites**: YouTube, TikTok, Twitter/X, Instagram, Vimeo, Twitch, Facebook, Reddit, and many more
 - **Format Selection**: Choose video quality (1080p, 720p, 480p, etc.) and format (MP4, WebM)
-- **Audio Only**: Download audio track separately
+- **Audio Only**: Download audio track separately (requires FFmpeg)
 - **Playlists**: Download entire playlists with one click
 - **Progress Tracking**: Real-time download progress with speed and ETA
 
@@ -127,6 +127,14 @@ Download videos from 100+ supported sites:
 3. Click "Download" to see format options
 4. Select your preferred quality and format
 5. For playlists, confirm to download all videos
+
+**FFmpeg Requirement**:
+Audio-only downloads require FFmpeg to be installed on your system:
+- **Ubuntu/Debian**: `sudo apt install ffmpeg`
+- **macOS**: `brew install ffmpeg`
+- **Windows**: Download from [ffmpeg.org](https://ffmpeg.org/download.html)
+
+If FFmpeg is not installed, the app will warn you when selecting audio-only formats.
 
 Videos are automatically saved to the "Videos" category.
 

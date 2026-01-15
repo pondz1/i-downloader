@@ -75,6 +75,7 @@ class DownloadItemWidget(QFrame):
         self.status_label = QLabel()
         self.status_label.setObjectName("statusLabel")
         self.status_label.setMinimumHeight(20)
+        self.status_label.setWordWrap(True)  # Enable word wrap for long error messages
         left_layout.addWidget(self.status_label)
         
         main_layout.addLayout(left_layout, 1)
@@ -165,7 +166,14 @@ class DownloadItemWidget(QFrame):
             
         elif status == DownloadStatus.FAILED:
             error = self.download.error_message or "Unknown error"
-            self.status_label.setText(f"✕ Failed: {error}")
+            # Truncate very long error messages and show full text in tooltip
+            if len(error) > 100:
+                short_error = error[:97] + "..."
+                self.status_label.setText(f"✕ Failed: {short_error}")
+                self.status_label.setToolTip(f"✕ Failed: {error}")
+            else:
+                self.status_label.setText(f"✕ Failed: {error}")
+                self.status_label.setToolTip("")
             
         else:
             self.status_label.setText(status.capitalize())
