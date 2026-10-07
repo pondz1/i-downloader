@@ -7,7 +7,7 @@ DARK_THEME = """
 QWidget {
     background-color: #0f172a;
     color: #f1f5f9;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     font-size: 13px;
 }
 
