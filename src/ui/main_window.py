@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
     QSystemTrayIcon, QMenu, QMessageBox, QApplication, QTabWidget, QDialog
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSlot, QSize
-from PyQt6.QtGui import QIcon, QAction, QCloseEvent
+from PyQt6.QtGui import QIcon, QAction, QCloseEvent, QKeySequence, QShortcut
 
 try:
     import qtawesome as qta
@@ -98,6 +98,7 @@ class MainWindow(QMainWindow):
         self._setup_central_widget()
         self._setup_status_bar()
         self._setup_system_tray()
+        self._setup_shortcuts()
         
         # Apply theme
         self.setStyleSheet(DARK_THEME)
@@ -132,6 +133,7 @@ class MainWindow(QMainWindow):
         
         # Add download button
         self.add_btn = QPushButton(" Add Download")
+        self.add_btn.setToolTip("Add new download (Ctrl+N / Cmd+N)")
         if HAS_QTAWESOME:
             self.add_btn.setIcon(qta.icon('fa5s.plus', color='#eaeaea'))
         self.add_btn.clicked.connect(self._on_add_download)
@@ -139,6 +141,7 @@ class MainWindow(QMainWindow):
 
         # Batch import button
         self.batch_btn = QPushButton(" Batch Import")
+        self.batch_btn.setToolTip("Batch import URLs (Ctrl+B / Cmd+B)")
         if HAS_QTAWESOME:
             self.batch_btn.setIcon(qta.icon('fa5s.list', color='#eaeaea'))
         self.batch_btn.clicked.connect(self._on_batch_import)
@@ -148,6 +151,7 @@ class MainWindow(QMainWindow):
         
         # Resume all button
         self.resume_all_btn = QPushButton(" Resume All")
+        self.resume_all_btn.setToolTip("Resume all downloads (Ctrl+Shift+R)")
         if HAS_QTAWESOME:
             self.resume_all_btn.setIcon(qta.icon('fa5s.play', color='#eaeaea'))
         self.resume_all_btn.clicked.connect(self._on_resume_all)
@@ -155,6 +159,7 @@ class MainWindow(QMainWindow):
         
         # Pause all button
         self.pause_all_btn = QPushButton(" Pause All")
+        self.pause_all_btn.setToolTip("Pause all downloads (Ctrl+Shift+P)")
         if HAS_QTAWESOME:
             self.pause_all_btn.setIcon(qta.icon('fa5s.pause', color='#eaeaea'))
         self.pause_all_btn.clicked.connect(self._on_pause_all)
@@ -164,6 +169,7 @@ class MainWindow(QMainWindow):
         
         # Clear completed button
         self.clear_btn = QPushButton(" Clear Completed")
+        self.clear_btn.setToolTip("Clear finished downloads (Ctrl+Shift+C)")
         if HAS_QTAWESOME:
             self.clear_btn.setIcon(qta.icon('fa5s.trash-alt', color='#eaeaea'))
         self.clear_btn.clicked.connect(self._on_clear_completed)
@@ -176,10 +182,37 @@ class MainWindow(QMainWindow):
         
         # Settings button
         self.settings_btn = QPushButton(" Settings")
+        self.settings_btn.setToolTip("Application settings (Ctrl+, / Cmd+,)")
         if HAS_QTAWESOME:
             self.settings_btn.setIcon(qta.icon('fa5s.cog', color='#eaeaea'))
         self.settings_btn.clicked.connect(self._on_settings)
         toolbar.addWidget(self.settings_btn)
+
+    def _setup_shortcuts(self):
+        """Setup keyboard shortcuts for quick actions"""
+        # Add download: Ctrl+N / Cmd+N
+        shortcut_add = QShortcut(QKeySequence.StandardKey.New, self)
+        shortcut_add.activated.connect(self._on_add_download)
+
+        # Batch import: Ctrl+B / Cmd+B
+        shortcut_batch = QShortcut(QKeySequence("Ctrl+B"), self)
+        shortcut_batch.activated.connect(self._on_batch_import)
+
+        # Settings: Ctrl+, / Cmd+,
+        shortcut_settings = QShortcut(QKeySequence.StandardKey.Preferences, self)
+        shortcut_settings.activated.connect(self._on_settings)
+
+        # Pause all: Ctrl+Shift+P
+        shortcut_pause = QShortcut(QKeySequence("Ctrl+Shift+P"), self)
+        shortcut_pause.activated.connect(self._on_pause_all)
+
+        # Resume all: Ctrl+Shift+R
+        shortcut_resume = QShortcut(QKeySequence("Ctrl+Shift+R"), self)
+        shortcut_resume.activated.connect(self._on_resume_all)
+
+        # Clear completed: Ctrl+Shift+C
+        shortcut_clear = QShortcut(QKeySequence("Ctrl+Shift+C"), self)
+        shortcut_clear.activated.connect(self._on_clear_completed)
     
     def _setup_central_widget(self):
         """Setup the central widget with tabs"""

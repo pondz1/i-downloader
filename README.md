@@ -1,174 +1,203 @@
 # i-Downloader
 
-A fast, multi-threaded download manager built with Python and PyQt6.
+A high-performance, multi-threaded desktop download manager built with Python 3.11+ and PyQt6, powered by asyncio and SQLite persistence.
 
-## Features
+[![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
+[![Framework](https://img.shields.io/badge/GUI-PyQt6-green.svg)](https://riverbankcomputing.com/software/pyqt/)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)]()
 
-- 🚀 **Multi-threaded Downloads** - Split files into segments for faster downloads
-- ⏸️ **Pause/Resume** - Resume interrupted downloads
-- 📋 **Download Queue** - Manage multiple downloads with priority ordering
-- 📊 **Progress Tracking** - Real-time speed and ETA
-- 🌙 **Dark Theme** - Modern, eye-friendly interface
-- 📑 **Auto-Categorization** - Organize files by type (Videos, Images, Documents, etc.)
-- 📋 **Clipboard Monitoring** - Auto-detect URLs and prompt to download
-- ⏰ **Scheduler** - Schedule downloads for specific times
-- 📦 **Batch Import** - Import multiple URLs at once
-- 🔒 **Checksum Verification** - Verify file integrity with MD5/SHA256
-- 🔔 **Notifications** - Desktop alerts on completion/failure
-- 📜 **Download History** - Search and filter past downloads
-- 🔄 **Auto-Retry** - Automatically retry failed downloads
-- 🚦 **Bandwidth Limiter** - Control download speeds
-- 🌐 **Proxy Support** - HTTP/SOCKS proxy configuration
-- 🎬 **Video Downloads** - Download from 100+ sites (YouTube, TikTok, Twitter, etc.) with format selection
+---
 
-## Requirements
+## Overview
 
-- Python 3.11+
-- Windows/Linux/macOS
+**i-Downloader** is engineered for high throughput, stability, and desktop ergonomics. It splits incoming streams into concurrent segments via HTTP Range requests, reducing transfer bottlenecks on large files. The application combines Qt's native desktop responsiveness with Python's asynchronous I/O to deliver seamless progress reporting without interface locking.
+
+---
+
+## Architecture
+
+The application adopts a layered architecture separating user interface, asynchronous orchestration, download execution, and persistence:
+
+```mermaid
+flowchart TD
+    subgraph UI ["Presentation Layer (PyQt6)"]
+        MainWindow["MainWindow"]
+        Dialogs["Add / Batch / Settings / Format Dialogs"]
+        History["HistoryViewWidget"]
+        Monitor["ClipboardMonitor"]
+    end
+
+    subgraph Bridge ["Async / Qt Bridge"]
+        AsyncRunner["AsyncRunner (Event Loop Bridge)"]
+    end
+
+    subgraph Engine ["Core Engine"]
+        DM["DownloadManager"]
+        Scheduler["DownloadScheduler"]
+        QM["QueueManager"]
+        SD["SegmentDownloader (Concurrent Workers)"]
+        VD["VideoDownloader (yt-dlp Engine)"]
+    end
+
+    subgraph Storage ["Persistence & Filesystem"]
+        DB[("SQLite Database (~/.i-downloader/i_downloader.db)")]
+        Disk[("Target Storage / Temp Segments")]
+    end
+
+    MainWindow --> AsyncRunner
+    Dialogs --> AsyncRunner
+    Monitor --> MainWindow
+    AsyncRunner --> DM
+    DM --> QM
+    DM --> Scheduler
+    DM --> SD
+    DM --> VD
+    SD --> Disk
+    DM --> DB
+    History --> DB
+```
+
+---
+
+## Core Features
+
+- **Multi-Segment Downloads**: Automatically splits target files into parallel segments (default: 8 connections) using HTTP Range headers, accelerating downloads across high-latency connections.
+- **Resilient Pause & Resume**: Saves incomplete segment chunks with byte-level precision, enabling interruption recovery after network disconnection or application restart.
+- **Media Extraction**: Native integration with `yt-dlp` supporting video quality selection, audio extraction, and playlist parsing across 100+ platforms.
+- **Automatic Categorization**: Directs files into dedicated directories (Videos, Audio, Documents, Images, Archives, Programs) based on MIME type and file extension.
+- **Smart Queue & Bandwidth Throttling**: Configure maximum concurrent transfers, set global or per-item download rate limits, and prioritize queue entries.
+- **Automated Scheduler**: Queue downloads to initiate at specific timestamps or off-peak hours.
+- **Clipboard Monitoring**: Background URL detection prompts download actions automatically when valid media or file links are copied.
+- **Data Integrity Verification**: Built-in verification engine supporting MD5, SHA1, and SHA256 hash checks with one-click validation.
+- **Crash-Safe Persistence**: Download records and task statuses are committed to an embedded SQLite database with automatic recovery on restart.
+- **Desktop Ergonomics**: Dark theme UI, system tray integration with background operation, and keyboard shortcuts.
+
+---
+
+## Keyboard Shortcuts
+
+| Shortcut (macOS / Linux / Windows) | Action |
+| :--- | :--- |
+| `Cmd+N` / `Ctrl+N` | Open Add Download Dialog |
+| `Cmd+B` / `Ctrl+B` | Open Batch Import Dialog |
+| `Cmd+,` / `Ctrl+,` | Open Application Settings |
+| `Ctrl+Shift+P` | Pause All Active Downloads |
+| `Ctrl+Shift+R` | Resume All Paused Downloads |
+| `Ctrl+Shift+C` | Clear Completed Downloads from View |
+
+---
 
 ## Installation
 
+### Prerequisites
+
+- Python 3.11 or higher
+- Optional: `ffmpeg` (required for merging high-resolution video streams and extracting audio)
+  - macOS: `brew install ffmpeg`
+  - Ubuntu/Debian: `sudo apt install ffmpeg`
+  - Windows: `winget install Gyan.FFmpeg` or download from [ffmpeg.org](https://ffmpeg.org/)
+
+### Option A: Using uv (Recommended - Fast)
+
 ```bash
-# Install Env
-python -m venv .venv
+# Clone the repository
+git clone https://github.com/pondz1/i-downloader.git
+cd i-downloader
+
+# Create virtual environment and install dependencies
+uv venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+uv pip install -e ".[dev]"
+
+# Launch application
+python main.py
+```
+
+### Option B: Using standard venv and pip
+
+```bash
+# Clone the repository
+git clone https://github.com/pondz1/i-downloader.git
+cd i-downloader
+
+# Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Run the application
+# Launch application
 python main.py
 ```
 
-## Usage
+---
 
-1. Click **"+ Add"** to add a new download
-2. Paste the URL and choose save location
-3. Click **"Download"** to start
+## Project Structure
 
-## Advanced Features
+```text
+i-downloader/
+├── pyproject.toml              # Modern build configuration and dependencies (PEP 621)
+├── requirements.txt            # Pinned requirements for standard pip workflows
+├── main.py                     # Application bootstrap and Qt/Asyncio event loop runner
+├── src/
+│   ├── core/                   # Core download orchestrator and workers
+│   │   ├── downloader.py       # Central DownloadManager controller
+│   │   ├── segment.py          # Concurrent HTTP range segment worker
+│   │   ├── queue_manager.py    # Priority queue and concurrent task coordinator
+│   │   ├── scheduler.py        # Task scheduler for timed execution
+│   │   ├── checksum.py         # MD5/SHA1/SHA256 file verification engine
+│   │   ├── video_downloader.py # yt-dlp media extraction wrapper
+│   │   └── file_utils.py       # Safe filesystem operations and segment merging
+│   ├── models/                 # Data layer and persistence
+│   │   ├── download.py         # Download task data model
+│   │   └── database.py         # SQLite persistence layer and query interface
+│   ├── ui/                     # Graphical user interface (PyQt6)
+│   │   ├── main_window.py      # Primary application window and layout
+│   │   ├── download_item.py    # Progress card widget with live speed/ETA
+│   │   ├── download_dialog.py  # Single URL submission dialog
+│   │   ├── batch_dialog.py     # Batch URL import dialog
+│   │   ├── settings_dialog.py  # User configuration modal
+│   │   ├── history_view.py     # Download history log and search
+│   │   └── styles.py           # Dark theme stylesheet
+│   └── utils/                  # Cross-cutting utilities
+│       ├── constants.py        # Application constants and configuration paths
+│       ├── helpers.py          # Formatting, URL parsing, and filename sanitization
+│       ├── categories.py       # File extension and MIME type categorization
+│       ├── logger.py           # Centralized logging configuration
+│       └── notifications.py    # Desktop notification bridge
+└── tests/                      # Automated test suite
+    ├── test_checksum.py        # Checksum calculation and validation tests
+    ├── test_helpers.py         # Size, speed, and filename sanitization tests
+    └── test_categories.py     # Category detection tests
+```
 
-### 📑 Auto-Categorization
-Downloads are automatically organized into categories based on file type:
-- **Videos** (mp4, mkv, avi, webm, etc.)
-- **Images** (jpg, png, gif, webp, etc.)
-- **Audio** (mp3, flac, wav, m4a, etc.)
-- **Documents** (pdf, doc, txt, epub, etc.)
-- **Archives** (zip, rar, 7z, tar, etc.)
-- **Programs** (exe, appimage, dmg, deb, etc.)
+---
 
-Configure category paths in Settings → Categories.
+## Testing
 
-### 📋 Clipboard Monitoring
-When enabled, i-Downloader automatically detects URLs copied to your clipboard and prompts you to download. Enable/disable in Settings → General.
+The project includes unit tests for core utilities, checksum verification, and file categorization.
 
-### ⏰ Scheduler
-Schedule downloads to start at specific times:
-1. Add a download normally
-2. Right-click the download → "Schedule"
-3. Set the date and time
-4. The download will start automatically at the scheduled time
+Run the test suite using pytest:
 
-### 📦 Batch Import
-Import multiple URLs at once:
-1. Click **"Batch Import"** in the toolbar
-2. Paste URLs (one per line) or load from a text file
-3. Configure common settings (save location, category, etc.)
-4. Click **"Import"** to add all to the queue
+```bash
+pytest -v
+```
 
-### 🔒 Checksum Verification
-Verify downloaded file integrity:
-- Supports MD5, SHA1, and SHA256
-- View checksums in Download History
-- Automatically verifies after download if checksum provided
+---
 
-### 🔔 Notifications
-Receive desktop notifications when:
-- Downloads complete
-- Downloads fail
-- Batch operations finish
+## Configuration & Data Storage
 
-Configure notification preferences in Settings.
+Application configuration and task states are maintained in the user profile directory:
 
-### 📜 Download History
-Access complete download history:
-- View all past downloads (completed, failed, cancelled)
-- Search by filename or URL
-- Filter by status
-- Open file/folder, retry, or delete entries
+- Database: `~/.i-downloader/i_downloader.db`
+- Settings: `~/.i-downloader/settings.json`
+- Application Logs: `~/.i-downloader/logs/app.log`
+- Temporary Segment Cache: `~/.i-downloader/temp/`
 
-### 🔄 Auto-Retry
-Failed downloads automatically retry with:
-- Exponential backoff (delays increase between retries)
-- Configurable max retry count
-- Smart segment-level retry for partial failures
-
-### 🚦 Bandwidth Limiter
-Control download speeds to preserve bandwidth:
-- Set global speed limit in Settings → Network
-- Apply to individual downloads in the download context menu
-
-### 🌐 Proxy Support
-Route downloads through proxy servers:
-- HTTP/HTTPS/SOCKS4/SOCKS5 protocols
-- Authentication support (username/password)
-- Configure in Settings → Network
-
-### 🎬 Video Downloads
-Download videos from 100+ supported sites:
-- **Supported Sites**: YouTube, TikTok, Twitter/X, Instagram, Vimeo, Twitch, Facebook, Reddit, and many more
-- **Format Selection**: Choose video quality (1080p, 720p, 480p, etc.) and format (MP4, WebM)
-- **Audio Only**: Download audio track separately (requires FFmpeg)
-- **Playlists**: Download entire playlists with one click
-- **Progress Tracking**: Real-time download progress with speed and ETA
-
-**How to Use**:
-1. Paste a video URL (e.g., YouTube link)
-2. The app will detect it's a video and show "Video detected on [Site Name]"
-3. Click "Download" to see format options
-4. Select your preferred quality and format
-5. For playlists, confirm to download all videos
-
-**FFmpeg Requirement**:
-Audio-only downloads require FFmpeg to be installed on your system:
-- **Ubuntu/Debian**: `sudo apt install ffmpeg`
-- **macOS**: `brew install ffmpeg`
-- **Windows**: Download from [ffmpeg.org](https://ffmpeg.org/download.html)
-
-If FFmpeg is not installed, the app will warn you when selecting audio-only formats.
-
-Videos are automatically saved to the "Videos" category.
-
-## Roadmap
-
-### ✅ Completed
-
-Core download management functionality is fully implemented, including:
-- Multi-threaded downloads with pause/resume
-- Download queue with priority management
-- Progress tracking with real-time speed and ETA
-- System tray integration
-- Settings management
-- Clipboard monitoring
-- Download categories with auto-organization
-- Download scheduler
-- Bandwidth limiting
-- Batch URL import
-- Auto-retry on failure
-- Download history with search and filter
-- Desktop notifications
-- Checksum verification (MD5/SHA256)
-- Proxy support (HTTP/HTTPS/SOCKS)
-- **Video site integration** - Support for 100+ video sites including YouTube, TikTok, Twitter, Instagram, Vimeo, and more
-
-### 🚀 Planned Features
-
-Future enhancements planned for development:
-
-- [ ] **Torrent Support** - Magnet links and .torrent files with full P2P functionality
-- [ ] **Cloud Integration** - Direct upload to Google Drive, OneDrive, Dropbox
-- [ ] **Keyboard Shortcuts** - Global hotkeys for quick actions
-- [ ] **Plugin System** - Extensible architecture for custom plugins and integrations
+---
 
 ## License
 
-MIT License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
