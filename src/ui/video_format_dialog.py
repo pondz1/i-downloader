@@ -203,23 +203,23 @@ class VideoFormatDialog(QDialog):
                 background-color: #16213e;
                 border: 1px solid #0f3460;
                 border-radius: 6px;
-                gridline-color: #0f3460;
+                gridline-color: #1e293b;
             }
             QTableWidget::item {
                 padding: 8px;
-                color: #eaeaea;
+                color: #f1f5f9;
             }
             QTableWidget::item:selected {
-                background-color: #0f3460;
-                color: #4cc9f0;
+                background-color: #1e293b;
+                color: #38bdf8;
             }
             QHeaderView::section {
-                background-color: #1a1a2e;
-                color: #eaeaea;
+                background-color: #0c1322;
+                color: #94a3b8;
                 padding: 10px;
                 border: none;
-                border-bottom: 2px solid #0f3460;
-                font-weight: bold;
+                border-bottom: 1px solid #1e293b;
+                font-weight: 600;
             }
         """)
 

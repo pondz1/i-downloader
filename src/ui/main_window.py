@@ -116,7 +116,7 @@ class MainWindow(QMainWindow):
         
         # Set window icon
         if HAS_QTAWESOME:
-            self.setWindowIcon(qta.icon('fa5s.download', color='#e94560'))
+            self.setWindowIcon(qta.icon('fa5s.download', color='#3b82f6'))
         
         # Center on screen
         screen = QApplication.primaryScreen().geometry()
@@ -259,12 +259,42 @@ class MainWindow(QMainWindow):
         scroll.setWidget(self.downloads_container)
         downloads_layout.addWidget(scroll)
 
-        # Empty state
-        self.empty_label = QLabel("No downloads yet. Click '+ Add Download' to start.")
-        self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.empty_label.setObjectName("subtitleLabel")
-        self.empty_label.setStyleSheet("padding: 50px; color: #666;")
-        self.downloads_layout.addWidget(self.empty_label)
+        # Empty state widget
+        self.empty_widget = QWidget()
+        self.empty_widget.setObjectName("emptyStateWidget")
+        empty_layout = QVBoxLayout(self.empty_widget)
+        empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_layout.setContentsMargins(20, 80, 20, 80)
+        empty_layout.setSpacing(12)
+
+        icon_label = QLabel()
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        if HAS_QTAWESOME:
+            icon_label.setPixmap(qta.icon('fa5s.cloud-download-alt', color='#475569').pixmap(QSize(56, 56)))
+        empty_layout.addWidget(icon_label)
+
+        title_label = QLabel("No active downloads")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_label.setObjectName("titleLabel")
+        empty_layout.addWidget(title_label)
+
+        desc_label = QLabel("Click Add Download or press Cmd+N / Ctrl+N to start")
+        desc_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        desc_label.setObjectName("subtitleLabel")
+        empty_layout.addWidget(desc_label)
+
+        add_btn = QPushButton(" Add Download")
+        add_btn.setObjectName("primaryButton")
+        add_btn.setFixedSize(140, 36)
+        if HAS_QTAWESOME:
+            add_btn.setIcon(qta.icon('fa5s.plus', color='#ffffff'))
+        add_btn.clicked.connect(self._on_add_download)
+        btn_wrapper = QHBoxLayout()
+        btn_wrapper.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        btn_wrapper.addWidget(add_btn)
+        empty_layout.addLayout(btn_wrapper)
+
+        self.downloads_layout.addWidget(self.empty_widget)
 
         # Add downloads tab
         self.tab_widget.addTab(downloads_tab, "Downloads")
@@ -297,7 +327,7 @@ class MainWindow(QMainWindow):
         
         # Set tray icon
         if HAS_QTAWESOME:
-            self.tray_icon.setIcon(qta.icon('fa5s.download', color='#e94560'))
+            self.tray_icon.setIcon(qta.icon('fa5s.download', color='#3b82f6'))
         else:
             # Use default Qt icon as fallback
             self.tray_icon.setIcon(self.style().standardIcon(
@@ -688,8 +718,8 @@ class MainWindow(QMainWindow):
     
     def _add_download_widget(self, download: Download):
         """Add a download widget to the list"""
-        # Hide empty label
-        self.empty_label.hide()
+        # Hide empty state
+        self.empty_widget.hide()
         
         # Create widget
         widget = DownloadItemWidget(download)
@@ -720,9 +750,9 @@ class MainWindow(QMainWindow):
     def _update_empty_state(self):
         """Update empty state visibility"""
         if not self._download_widgets:
-            self.empty_label.show()
+            self.empty_widget.show()
         else:
-            self.empty_label.hide()
+            self.empty_widget.hide()
     
     def _update_download_count(self):
         """Update download count label"""
