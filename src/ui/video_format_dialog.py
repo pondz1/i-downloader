@@ -380,7 +380,7 @@ class VideoFormatDialog(QDialog):
         # Add "Best Quality" option
         self.formats_table.insertRow(0)
         self._add_format_row(0, {
-            'format_id': 'best',
+            'format_id': 'bestvideo+bestaudio/best',
             'quality': 'Best Quality',
             'ext': 'mp4',
             'filesize': 0,
@@ -545,7 +545,7 @@ class VideoFormatDialog(QDialog):
                     if format_id:
                         selected_formats.append(format_id)
 
-        return selected_formats if selected_formats else ['best'], self.video_info
+        return selected_formats if selected_formats else ['bestvideo+bestaudio/best'], self.video_info
 
     def closeEvent(self, event):
         """Clean up on close"""

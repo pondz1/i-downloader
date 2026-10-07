@@ -21,6 +21,41 @@ from ..utils.helpers import format_size, format_speed, format_time
 from .styles import get_status_color
 
 
+# Exact RGBA color configurations for high-DPI crisp rendering
+STATUS_BADGE_CONFIG = {
+    DownloadStatus.DOWNLOADING: {
+        'bg': 'rgba(59, 130, 246, 0.16)',
+        'text': '#60a5fa',
+        'border': 'rgba(59, 130, 246, 0.35)',
+    },
+    DownloadStatus.COMPLETED: {
+        'bg': 'rgba(16, 185, 129, 0.16)',
+        'text': '#34d399',
+        'border': 'rgba(16, 185, 129, 0.35)',
+    },
+    DownloadStatus.PAUSED: {
+        'bg': 'rgba(245, 158, 11, 0.16)',
+        'text': '#fbbf24',
+        'border': 'rgba(245, 158, 11, 0.35)',
+    },
+    DownloadStatus.QUEUED: {
+        'bg': 'rgba(100, 116, 139, 0.16)',
+        'text': '#94a3b8',
+        'border': 'rgba(100, 116, 139, 0.35)',
+    },
+    DownloadStatus.FAILED: {
+        'bg': 'rgba(239, 68, 68, 0.16)',
+        'text': '#f87171',
+        'border': 'rgba(239, 68, 68, 0.35)',
+    },
+    DownloadStatus.CANCELLED: {
+        'bg': 'rgba(100, 116, 139, 0.16)',
+        'text': '#94a3b8',
+        'border': 'rgba(100, 116, 139, 0.35)',
+    },
+}
+
+
 class DownloadItemWidget(QFrame):
     """Widget representing a single download item"""
 
@@ -39,22 +74,25 @@ class DownloadItemWidget(QFrame):
         self._update_display()
 
     def _setup_ui(self):
-        """Set up the user interface"""
-        self.setFixedHeight(88)
+        """Set up the user interface with generous vertical hierarchy"""
+        self.setFixedHeight(94)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         # Main layout
         main_layout = QHBoxLayout(self)
-        main_layout.setContentsMargins(16, 10, 16, 10)
+        main_layout.setContentsMargins(16, 12, 16, 12)
         main_layout.setSpacing(16)
 
         # Left section - File info
         left_layout = QVBoxLayout()
-        left_layout.setSpacing(5)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(6)
 
-        # Top row: Filename + Badge
+        # Top row: Filename + Status Badge placed together on the left
         top_row = QHBoxLayout()
-        top_row.setSpacing(8)
+        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.setSpacing(10)
+        top_row.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
         self.filename_label = QLabel(self.download.filename)
         self.filename_label.setObjectName("filenameLabel")
@@ -62,11 +100,15 @@ class DownloadItemWidget(QFrame):
         font.setBold(True)
         font.setPointSize(10)
         self.filename_label.setFont(font)
-        top_row.addWidget(self.filename_label, 1)
+        top_row.addWidget(self.filename_label, 0, Qt.AlignmentFlag.AlignVCenter)
 
         self.badge_label = QLabel()
         self.badge_label.setObjectName("badgeLabel")
-        top_row.addWidget(self.badge_label, 0)
+        self.badge_label.setFixedHeight(20)
+        self.badge_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        top_row.addWidget(self.badge_label, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        top_row.addStretch(1)
         left_layout.addLayout(top_row)
 
         # Progress bar
@@ -75,17 +117,18 @@ class DownloadItemWidget(QFrame):
         self.progress_bar.setMaximum(100)
         self.progress_bar.setValue(0)
         self.progress_bar.setTextVisible(False)
-        self.progress_bar.setFixedHeight(8)
+        self.progress_bar.setFixedHeight(6)
         left_layout.addWidget(self.progress_bar)
 
         # Status info (size, speed, ETA)
         self.status_label = QLabel()
         self.status_label.setObjectName("statusLabel")
+        self.status_label.setFixedHeight(18)
         left_layout.addWidget(self.status_label)
 
         main_layout.addLayout(left_layout, 1)
 
-        # Right section - Buttons
+        # Right section - Action Buttons
         button_layout = QHBoxLayout()
         button_layout.setSpacing(8)
         button_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
@@ -133,25 +176,26 @@ class DownloadItemWidget(QFrame):
             QProgressBar {{
                 background-color: #1e293b;
                 border: none;
-                border-radius: 4px;
-                height: 8px;
+                border-radius: 3px;
+                height: 6px;
             }}
             QProgressBar::chunk {{
                 background-color: {status_color};
-                border-radius: 4px;
+                border-radius: 3px;
             }}
         """)
 
-        # Update badge
+        # Update badge styling with RGBA
+        cfg = STATUS_BADGE_CONFIG.get(self.download.status, STATUS_BADGE_CONFIG[DownloadStatus.QUEUED])
         badge_text = f"{progress}%" if self.download.status == DownloadStatus.DOWNLOADING else self.download.status.capitalize()
         self.badge_label.setText(badge_text)
         self.badge_label.setStyleSheet(f"""
             QLabel {{
-                background-color: {status_color}22;
-                color: {status_color};
-                border: 1px solid {status_color}44;
+                background-color: {cfg['bg']};
+                color: {cfg['text']};
+                border: 1px solid {cfg['border']};
                 border-radius: 4px;
-                padding: 1px 6px;
+                padding: 1px 7px;
                 font-size: 11px;
                 font-weight: 600;
             }}
