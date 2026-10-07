@@ -427,7 +427,7 @@ QFrame#downloadItemFrame {
     background-color: #162137;
     border: 1px solid #1e293b;
     border-radius: 10px;
-    padding: 12px 16px;
+    padding: 0px;
 }
 
 QFrame#downloadItemFrame:hover {

@@ -75,24 +75,23 @@ class DownloadItemWidget(QFrame):
 
     def _setup_ui(self):
         """Set up the user interface with generous vertical hierarchy"""
-        self.setFixedHeight(94)
+        self.setFixedHeight(102)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         # Main layout
         main_layout = QHBoxLayout(self)
-        main_layout.setContentsMargins(16, 12, 16, 12)
+        main_layout.setContentsMargins(16, 14, 16, 14)
         main_layout.setSpacing(16)
 
         # Left section - File info
         left_layout = QVBoxLayout()
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(6)
+        left_layout.setSpacing(10)
 
-        # Top row: Filename + Status Badge placed together on the left
+        # Top row: Filename on left, Status Badge on original side (far right)
         top_row = QHBoxLayout()
         top_row.setContentsMargins(0, 0, 0, 0)
-        top_row.setSpacing(10)
-        top_row.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        top_row.setSpacing(12)
 
         self.filename_label = QLabel(self.download.filename)
         self.filename_label.setObjectName("filenameLabel")
@@ -100,15 +99,15 @@ class DownloadItemWidget(QFrame):
         font.setBold(True)
         font.setPointSize(10)
         self.filename_label.setFont(font)
-        top_row.addWidget(self.filename_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.filename_label.setFixedHeight(24)
+        top_row.addWidget(self.filename_label, 1)
 
         self.badge_label = QLabel()
         self.badge_label.setObjectName("badgeLabel")
         self.badge_label.setFixedHeight(20)
         self.badge_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        top_row.addWidget(self.badge_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        top_row.addWidget(self.badge_label, 0)
 
-        top_row.addStretch(1)
         left_layout.addLayout(top_row)
 
         # Progress bar
@@ -166,6 +165,7 @@ class DownloadItemWidget(QFrame):
         """Update all display elements based on current download state"""
         # Update filename
         self.filename_label.setText(self.download.filename)
+        self.filename_label.setToolTip(self.download.filename)
 
         # Update progress bar
         progress = int(self.download.progress)
