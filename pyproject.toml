@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "i-downloader"
+version = "1.0.0"
+description = "A fast, multi-threaded desktop download manager built with Python and PyQt6"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "pondz1" }
+]
+keywords = [
+    "download-manager",
+    "pyqt6",
+    "asyncio",
+    "multi-threaded",
+    "yt-dlp",
+    "video-downloader"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Utilities"
+]
+dependencies = [
+    "PyQt6>=6.6.0",
+    "aiohttp>=3.9.0",
+    "aiofiles>=23.2.0",
+    "qtawesome>=1.3.0",
+    "yt-dlp>=2023.12.30",
+    "win10toast>=0.9; platform_system == 'Windows'"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "ruff>=0.1.0"
+]
+
+[project.scripts]
+i-downloader = "main:main"
+
+[project.urls]
+Homepage = "https://github.com/pondz1/i-downloader"
+Repository = "https://github.com/pondz1/i-downloader"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"

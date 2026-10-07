@@ -131,25 +131,27 @@ class SettingsDialog(QDialog):
         self.tab_widget = QTabWidget()
         self.tab_widget.setStyleSheet("""
             QTabWidget::pane {
-                border: 1px solid #0f3460;
+                border: 1px solid #1e293b;
                 border-radius: 8px;
-                background-color: #1a1a2e;
+                background-color: #0f172a;
             }
             QTabBar::tab {
-                background-color: #16213e;
-                color: #eaeaea;
-                padding: 10px 20px;
+                background-color: #131d31;
+                color: #94a3b8;
+                padding: 8px 16px;
                 margin-right: 2px;
                 border-top-left-radius: 6px;
                 border-top-right-radius: 6px;
-                font-weight: bold;
+                font-weight: 500;
             }
             QTabBar::tab:selected {
-                background-color: #0f3460;
-                color: #4cc9f0;
+                background-color: #1e293b;
+                color: #38bdf8;
+                font-weight: 600;
             }
-            QTabBar::tab:hover {
-                background-color: #1a1a2e;
+            QTabBar::tab:hover:!selected {
+                background-color: #17233b;
+                color: #f1f5f9;
             }
         """)
         layout.addWidget(self.tab_widget)

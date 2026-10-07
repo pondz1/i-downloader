@@ -245,9 +245,16 @@ class VideoDownloader:
                 elif d['status'] == 'finished':
                     logger.info(f"Download finished: {d.get('filename')}")
 
+            # Resolve format string to support adaptive video+audio streams
+            resolved_format = format_id
+            if resolved_format == 'best':
+                resolved_format = 'bestvideo+bestaudio/best'
+            elif not is_audio_download and '+' not in resolved_format and '/' not in resolved_format:
+                resolved_format = f"{format_id}+bestaudio/best"
+
             # Configure yt-dlp options
             ydl_opts = {
-                'format': format_id,
+                'format': resolved_format,
                 'outtmpl': str(Path(save_path) / '%(title)s.%(ext)s'),
                 'progress_hooks': [progress_hook],
                 'quiet': True,
@@ -255,6 +262,8 @@ class VideoDownloader:
                 'ignoreerrors': False,
                 'overwrites': True,  # Overwrite if file exists
             }
+            if not is_audio_download and check_ffmpeg_available():
+                ydl_opts['merge_output_format'] = 'mp4'
 
             # Add post-processing for audio-only downloads (only if FFmpeg is available)
             if is_audio_download and check_ffmpeg_available():

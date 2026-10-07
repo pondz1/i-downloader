@@ -203,23 +203,23 @@ class VideoFormatDialog(QDialog):
                 background-color: #16213e;
                 border: 1px solid #0f3460;
                 border-radius: 6px;
-                gridline-color: #0f3460;
+                gridline-color: #1e293b;
             }
             QTableWidget::item {
                 padding: 8px;
-                color: #eaeaea;
+                color: #f1f5f9;
             }
             QTableWidget::item:selected {
-                background-color: #0f3460;
-                color: #4cc9f0;
+                background-color: #1e293b;
+                color: #38bdf8;
             }
             QHeaderView::section {
-                background-color: #1a1a2e;
-                color: #eaeaea;
+                background-color: #0c1322;
+                color: #94a3b8;
                 padding: 10px;
                 border: none;
-                border-bottom: 2px solid #0f3460;
-                font-weight: bold;
+                border-bottom: 1px solid #1e293b;
+                font-weight: 600;
             }
         """)
 
@@ -380,7 +380,7 @@ class VideoFormatDialog(QDialog):
         # Add "Best Quality" option
         self.formats_table.insertRow(0)
         self._add_format_row(0, {
-            'format_id': 'best',
+            'format_id': 'bestvideo+bestaudio/best',
             'quality': 'Best Quality',
             'ext': 'mp4',
             'filesize': 0,
@@ -545,7 +545,7 @@ class VideoFormatDialog(QDialog):
                     if format_id:
                         selected_formats.append(format_id)
 
-        return selected_formats if selected_formats else ['best'], self.video_info
+        return selected_formats if selected_formats else ['bestvideo+bestaudio/best'], self.video_info
 
     def closeEvent(self, event):
         """Clean up on close"""
